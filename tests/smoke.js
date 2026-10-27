@@ -163,7 +163,7 @@
     /* ---- 删除 ---- */
     t('删除待办', function () {
       var item = byTitle('测试任务A');
-      itemEl(item.id).querySelector('.icon-btn.danger').click();
+      itemEl(item.id).querySelector('.del-btn').click();
       return A.todos.length === 6 ? true : 'len=' + A.todos.length;
     });
     t('删除后列表同步', function () {
@@ -173,7 +173,7 @@
     /* ---- 编辑 ---- */
     t('打开编辑弹窗', function () {
       var item = A.todos[0];
-      itemEl(item.id).querySelector('.icon-btn').click();
+      itemEl(item.id).querySelector('.edit-btn').click();
       return document.getElementById('modalMask').hidden === false ? true : '弹窗未打开';
     });
     t('弹窗回填标题', function () {
@@ -193,13 +193,13 @@
     });
     t('弹窗内删除生效', function () {
       var item = A.todos[0];
-      itemEl(item.id).querySelector('.icon-btn').click();
+      itemEl(item.id).querySelector('.edit-btn').click();
       document.getElementById('editDelete').click();
       return A.todos.length === 5 ? true : 'len=' + A.todos.length;
     });
     t('ESC 关闭弹窗', function () {
       var item = A.todos[0];
-      itemEl(item.id).querySelector('.icon-btn').click();
+      itemEl(item.id).querySelector('.edit-btn').click();
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return document.getElementById('modalMask').hidden === true ? true : '弹窗未关闭';
     });
@@ -848,6 +848,39 @@
       var gapB = window.innerHeight - r.bottom;
       return (gapR >= 0 && gapR <= 8 && gapB >= 0 && gapB <= 10)
         ? true : '右边距=' + Math.round(gapR) + ' 下边距=' + Math.round(gapB);
+    });
+
+    /* ---- 待办置顶 ---- */
+    t('置顶后排在列表最前', function () {
+      A.todos = [
+        { id: 'p1', title: '普通任务', priority: 'high', due: '', repeat: 'none', done: false, createdAt: 3 },
+        { id: 'p2', title: '要钉住的任务', priority: 'low', due: '', repeat: 'none', done: false, createdAt: 1 }
+      ];
+      A.render();
+      A.togglePin('p2');
+      A.render();
+      var first = document.querySelector('.todo-item .todo-title');
+      return first && first.textContent === '要钉住的任务' ? true : '第一条=' + (first && first.textContent);
+    });
+    t('置顶项带 is-pinned 标记', function () {
+      var el = document.querySelector('.todo-item.is-pinned');
+      return el ? true : '没有 is-pinned';
+    });
+    t('图钉按钮反映置顶状态', function () {
+      var btn = document.querySelector('.todo-item.is-pinned .pin-btn');
+      return btn && btn.classList.contains('is-pinned') ? true : '按钮状态不对';
+    });
+    t('取消置顶后恢复原顺序', function () {
+      A.togglePin('p2');
+      A.render();
+      var first = document.querySelector('.todo-item .todo-title');
+      return first && first.textContent === '普通任务' ? true : '第一条=' + (first && first.textContent);
+    });
+    t('置顶数据会持久化', function () {
+      A.togglePin('p2');
+      var saved = JSON.parse(localStorage.getItem('todos') || '[]');
+      var hit = saved.filter(function (x) { return x.id === 'p2'; })[0];
+      return hit && hit.pinned === true ? true : 'saved=' + JSON.stringify(hit);
     });
 
     /* ---- 异常 ---- */

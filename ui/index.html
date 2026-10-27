@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>xixiの待办清单</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=160">
 </head>
 <body class="mode-mini">
 
@@ -125,6 +125,15 @@
             <button data-preset="1">标准</button>
             <button data-preset="2">宽大</button>
           </div>
+        </div>
+        <div class="set-row column">
+          <div class="set-row-head">
+            <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4"/><path d="M12 3.8a8.2 8.2 0 010 16.4" fill="currentColor" stroke="none" opacity=".28"/></svg></span>
+            <span class="set-text"><b>整卡透明度</b><small>0% 全透明，100% 全实（文字会一起变淡）</small></span>
+            <span class="set-val" id="opacityVal">100%</span>
+          </div>
+          <input class="opacity-range" id="setOpacity" type="range" min="0" max="100" step="1" value="100"
+                 aria-label="小卡片透明度">
         </div>
       </div>
     </section>
@@ -401,7 +410,8 @@
     <div class="modal-body">
       <label class="field">
         <span class="field-label">内容</span>
-        <input id="editText" type="text" maxlength="120" autocomplete="off" spellcheck="false">
+        <textarea id="editText" class="title-input" rows="3" maxlength="200"
+                  placeholder="要做什么" spellcheck="false"></textarea>
       </label>
       <div class="field-row">
         <div class="field">
@@ -465,9 +475,32 @@
   </div>
 </div>
 
+<!-- ===== 应用内更新（下载安装包 + 进度 + 就地安装） ===== -->
+<div class="dlg-mask" id="updMask" hidden>
+  <div class="dlg upd-dlg" role="dialog" aria-modal="true" aria-label="软件更新">
+    <p class="dlg-title" id="updTitle">发现新版本</p>
+    <p class="dlg-desc" id="updNotes"></p>
+
+    <div class="upd-bar" id="updBar" hidden>
+      <div class="upd-track"><div class="upd-fill" id="updFill"></div></div>
+      <div class="upd-meta">
+        <span id="updPct">0%</span>
+        <span id="updSize"></span>
+      </div>
+    </div>
+
+    <p class="upd-hint" id="updHint"></p>
+
+    <div class="dlg-actions">
+      <button class="dlg-btn" id="updCancel">稍后</button>
+      <button class="dlg-btn dlg-primary" id="updOk">立即更新</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 轻提示 ===== -->
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=160"></script>
 </body>
 </html>

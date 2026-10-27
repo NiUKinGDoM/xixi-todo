@@ -10,9 +10,14 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import ssl
+import subprocess
 import sys
+import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import webview
@@ -22,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -187,6 +192,7 @@ DEFAULT_STATE = {
     "collapse_min": True,
     "auto_collapse": False,
     "close_action": "quit",
+    "opacity": 100,
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -204,6 +210,7 @@ def load_state() -> dict:
         "collapse_min": DEFAULT_STATE["collapse_min"],
         "auto_collapse": DEFAULT_STATE["auto_collapse"],
         "close_action": "quit",
+        "opacity": DEFAULT_STATE["opacity"],
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
@@ -226,6 +233,11 @@ def load_state() -> dict:
                     state["auto_collapse"] = raw["auto_collapse"]
                 if raw.get("close_action") in ("quit", "tray"):
                     state["close_action"] = raw["close_action"]
+                try:
+                    op = int(raw.get("opacity", 100))
+                    state["opacity"] = max(0, min(100, op))
+                except Exception:
+                    pass
                 if isinstance(raw.get("snap"), bool):
                     state["snap"] = raw["snap"]
                 if isinstance(raw.get("app_name"), str) and raw["app_name"].strip():
@@ -608,6 +620,54 @@ def win_show(hwnd: int, restore: bool = True) -> bool:
         return False
 
 
+GWL_EXSTYLE = -20
+WS_EX_LAYERED = 0x00080000
+LWA_ALPHA = 0x00000002
+
+_u32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_u32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+_u32.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+_u32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+_u32.SetLayeredWindowAttributes.argtypes = [
+    ctypes.c_void_p, ctypes.c_uint, ctypes.c_ubyte, ctypes.c_uint,
+]
+_u32.SetLayeredWindowAttributes.restype = ctypes.c_bool
+
+
+def win_set_opacity(hwnd: int, percent: int) -> bool:
+    """整窗透明度：0 = 全透明，100 = 全实。
+
+    Windows 上只有分层窗口能做整窗透明。加 WS_EX_LAYERED 之后窗口改由
+    分层合成绘制，圆角/阴影会走 DWM 的另一条路径，所以这里只负责设值，
+    圆角在调用方之后重新裁一次。
+    """
+    if not hwnd:
+        return False
+    try:
+        pct = max(0, min(100, int(percent)))
+        alpha = int(round(pct * 255 / 100))
+        ex = int(_u32.GetWindowLongPtrW(ctypes.c_void_p(hwnd), GWL_EXSTYLE))
+        # 100% 就把分层样式摘掉，回到系统常规绘制 —— 圆角/阴影完全按原样，
+        # 不因为「曾经调过透明度」留下任何后遗症
+        if pct >= 100:
+            if ex & WS_EX_LAYERED:
+                _u32.SetWindowLongPtrW(
+                    ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex & ~WS_EX_LAYERED
+                )
+            return True
+        if not (ex & WS_EX_LAYERED):
+            _u32.SetWindowLongPtrW(
+                ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex | WS_EX_LAYERED
+            )
+        ok = _u32.SetLayeredWindowAttributes(
+            ctypes.c_void_p(hwnd), 0, alpha, LWA_ALPHA
+        )
+        return bool(ok)
+    except Exception as exc:
+        _log(f"set opacity failed: {exc}")
+        return False
+
+
 def win_request_close(hwnd: int) -> bool:
     """异步请求关窗。
 
@@ -712,6 +772,9 @@ class Api:
         # 只有用户真的拖动过，才做「贴边自动收起」；
         # 程序自己挪窗口（切模式、展开）不算。
         self._user_dragged = False
+        # 应用内更新的下载状态（前端轮询这个）
+        self._dl = {"state": "idle", "received": 0, "total": 0,
+                    "error": "", "path": "", "source": ""}
 
     # ---------- 数据 ----------
 
@@ -756,6 +819,172 @@ class Api:
         except Exception as exc:
             _log(f"open_url failed: {exc}")
             return False
+
+    # ---------- 应用内更新 ----------
+    #
+    # 不再让用户跳浏览器：直接在这里下载安装包、显示进度、下完就地安装。
+    # 下载放后台线程做，前端每 300ms 取一次进度；装的时候先把自己退掉，
+    # 否则安装包覆盖不了正在运行的 exe。
+
+    UPDATE_MIN_BYTES = 5 * 1024 * 1024   # 小于这个数说明下到的是错误页
+
+    def download_update(self, urls_json: str) -> str:
+        """开始后台下载安装包。urls_json 是候选地址数组（按优先级）。"""
+        if self._dl.get("state") == "downloading":
+            return json.dumps({"ok": False, "error": "正在下载中"}, ensure_ascii=False)
+        try:
+            urls = json.loads(urls_json) if isinstance(urls_json, str) else list(urls_json)
+        except Exception:
+            return json.dumps({"ok": False, "error": "参数错误"}, ensure_ascii=False)
+        urls = [str(u).strip() for u in urls if str(u or "").strip().lower().startswith("http")]
+        if not urls:
+            return json.dumps({"ok": False, "error": "没有可用的下载地址"}, ensure_ascii=False)
+
+        target = Path(tempfile.gettempdir()) / "xixi-todo-setup.exe"
+        self._dl = {
+            "state": "downloading", "received": 0, "total": 0,
+            "error": "", "path": "", "source": "",
+        }
+        t = threading.Thread(target=self._download_worker, args=(urls, target), daemon=True)
+        t.start()
+        return json.dumps({"ok": True}, ensure_ascii=False)
+
+    def _pick_fastest(self, urls: list[str], ctx) -> list[str]:
+        """并行探一下每个源，按实测速度排序，先下最快的那个。
+
+        之前是固定顺序试，撞上慢镜像就只能干等。这里每个源只要 128KB
+        样本，几秒钟就能排出快慢；探不出来的排后面兜底。
+        """
+        self._dl["phase"] = "probing"
+        results: list[tuple[float, str]] = []
+        lock = threading.Lock()
+
+        def probe(u: str) -> None:
+            try:
+                t0 = time.time()
+                req = urllib.request.Request(u, headers={
+                    "User-Agent": f"xixi-todo/{VERSION}",
+                    "Range": "bytes=0-131071",
+                })
+                with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
+                    chunk = r.read(131072)
+                cost = max(0.001, time.time() - t0)
+                if chunk:
+                    with lock:
+                        results.append((len(chunk) / cost, u))
+            except Exception as exc:
+                _log(f"probe failed: {u} -> {exc}")
+
+        threads = [threading.Thread(target=probe, args=(u,), daemon=True) for u in urls]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(6)
+
+        if not results:
+            return urls
+        results.sort(key=lambda x: x[0], reverse=True)
+        ordered = [u for _speed, u in results]
+        for u in urls:
+            if u not in ordered:
+                ordered.append(u)
+        _log(f"fastest mirror: {ordered[0]} ({results[0][0] / 1024:.0f} KB/s)")
+        self._dl["phase"] = "downloading"
+        return ordered
+
+    def _download_worker(self, urls: list[str], target: Path) -> None:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        if self._dl.get("state") != "downloading":
+            return
+        urls = self._pick_fastest(urls, ctx)
+        last_err = "全部下载源都失败了"
+        for url in urls:
+            try:
+                if self._dl.get("state") != "downloading":
+                    return  # 用户中途取消
+                _log(f"update download: {url}")
+                req = urllib.request.Request(url, headers={"User-Agent": f"xixi-todo/{VERSION}"})
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                    if getattr(resp, "status", 200) not in (200, 206):
+                        raise IOError(f"HTTP {resp.status}")
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    self._dl["total"] = total
+                    self._dl["source"] = url
+                    received = 0
+                    tmp = target.with_suffix(".part")
+                    with tmp.open("wb") as f:
+                        while True:
+                            if self._dl.get("state") != "downloading":
+                                tmp.unlink(missing_ok=True)
+                                return
+                            chunk = resp.read(64 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            received += len(chunk)
+                            self._dl["received"] = received
+
+                size = tmp.stat().st_size
+                if size < self.UPDATE_MIN_BYTES:
+                    tmp.unlink(missing_ok=True)
+                    raise IOError(f"文件不完整（{size} 字节）")
+                tmp.replace(target)
+                self._dl.update(state="done", path=str(target), received=size, total=size or received)
+                _log(f"update downloaded: {target} ({size} bytes)")
+                return
+            except Exception as exc:
+                last_err = str(exc)
+                _log(f"update source failed: {url} -> {exc}")
+
+        self._dl.update(state="error", error=last_err)
+
+    def get_download_progress(self) -> str:
+        dl = dict(self._dl)
+        total = int(dl.get("total") or 0)
+        received = int(dl.get("received") or 0)
+        if total > 0:
+            dl["percent"] = max(0, min(100, int(received * 100 / total)))
+        elif dl.get("state") == "done":
+            dl["percent"] = 100
+        else:
+            dl["percent"] = 0
+        return json.dumps(dl, ensure_ascii=False)
+
+    def cancel_download(self) -> bool:
+        if self._dl.get("state") == "downloading":
+            self._dl.update(state="idle", error="")
+            _log("update download cancelled")
+        return True
+
+    def install_update(self) -> bool:
+        """退出自己，然后静默覆盖安装。
+
+        正在运行的 exe 是锁着的，安装包直接写会失败，所以先用 cmd 起一个
+        分离进程：等两秒（够本进程完全退出）再启动安装程序。
+        """
+        path = str(self._dl.get("path") or "")
+        if not path or not Path(path).exists():
+            _log("install_update: no installer")
+            return False
+        try:
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            cmd = f'ping -n 3 127.0.0.1 >nul & start "" "{path}" /SILENT /CLOSEAPPLICATIONS'
+            subprocess.Popen(
+                ["cmd", "/c", cmd],
+                creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                close_fds=True,
+            )
+            _log(f"install_update: launching {path}")
+        except Exception as exc:
+            _log(f"install_update failed: {exc}")
+            return False
+
+        # 给自己留一点点时间把返回值送到前端，再关窗
+        threading.Timer(0.4, self.quit_app).start()
+        return True
 
     # ---------- 备份 ----------
 
@@ -846,6 +1075,7 @@ class Api:
                 "auto_collapse": bool(self.state.get("auto_collapse", False)),
                 "close_action": self.state.get("close_action", "quit"),
                 "autostart": is_autostart_enabled(),
+                "opacity": int(self.state.get("opacity", 100)),
             },
             ensure_ascii=False,
         )
@@ -915,6 +1145,21 @@ class Api:
         self.state["auto_collapse"] = value
         if value:
             self.state["collapse_min"] = False
+        save_state(self.state)
+        return self.get_window_state()
+
+    def set_opacity(self, value) -> str:
+        """小卡片透明度：0 = 全透明，100 = 全实。拖动滑块时高频调用。"""
+        try:
+            pct = max(0, min(100, int(float(value))))
+        except Exception:
+            return self.get_window_state()
+        self.state["opacity"] = pct
+        win = self._win()
+        win_set_opacity(_hwnd_of(win) if win is not None else 0, pct)
+        # 分层窗口会重置圆角绘制方式，补一次
+        if win is not None:
+            shape_window(win, 22 if self.state.get("mode", "mini") == "mini" else 14)
         save_state(self.state)
         return self.get_window_state()
 
@@ -1178,6 +1423,23 @@ class Api:
         except Exception as exc:
             _log(f"nearest edge failed: {exc}")
             return None
+
+    def collapse_now(self) -> str:
+        """空闲自动收起：卡在小卡片上放着一会儿没动，就缩成贴边小条。
+
+        只在小卡片里做，完整视图是正经工作区，不能自己消失。
+        """
+        win = self._win()
+        if win is None or self.state.get("collapsed"):
+            return self.get_window_state()
+        if self.state.get("mode", "mini") != "mini":
+            return self.get_window_state()
+        edge = self._nearest_edge(win, limit=None)
+        if not edge:
+            return self.get_window_state()
+        self._mute_snap(1.0)
+        _log(f"idle collapse -> {edge}")
+        return self.collapse_window(edge)
 
     def collapse_window(self, edge: str) -> str:
         win = self._win()
@@ -1584,6 +1846,15 @@ def main() -> None:
 
         # 尺寸与位置都定下来后再裁一次，确保圆角与最终几何匹配
         shape_window(window, 22 if mode == "mini" else 14)
+        # 恢复上次的透明度
+        try:
+            op = int(state.get("opacity", 100))
+            if op < 100:
+                win_set_opacity(_hwnd_of(window), op)
+                shape_window(window, 22 if mode == "mini" else 14)
+        except Exception as exc:
+            _log(f"restore opacity failed: {exc}")
+
         # 启动阶段别吸附、别自动收起
         api._quiet_until = time.monotonic() + 2.0
 

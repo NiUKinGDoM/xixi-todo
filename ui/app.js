@@ -75,6 +75,17 @@
     dlgInput: $('dlgInput'),
     dlgOk: $('dlgOk'),
     dlgCancel: $('dlgCancel'),
+    /* 应用内更新 */
+    updMask: $('updMask'),
+    updTitle: $('updTitle'),
+    updNotes: $('updNotes'),
+    updBar: $('updBar'),
+    updFill: $('updFill'),
+    updPct: $('updPct'),
+    updSize: $('updSize'),
+    updHint: $('updHint'),
+    updOk: $('updOk'),
+    updCancel: $('updCancel'),
     resizeGrip: $('resizeGrip'),
     settingsPanel: $('settingsPanel'),
     setBack: $('setBack'),
@@ -82,6 +93,8 @@
     setNameSave: $('setNameSave'),
     setSnap: $('setSnap'),
     setTop: $('setTop'),
+    setOpacity: $('setOpacity'),
+    opacityVal: $('opacityVal'),
     sizeSeg: $('setSize'),
     setCount: $('setCount'),
     collapsedMark: $('collapsedMark'),
@@ -409,8 +422,9 @@
 
   /* ---------- 渲染 ---------- */
   function sortTodos(list) {
-    // 未完成在前 → 手动顺序（拖拽过）→ 优先级 → 截止日期 → 创建时间
+    // 置顶在前 → 未完成在前 → 手动顺序（拖拽过）→ 优先级 → 截止日期 → 创建时间
     return list.sort(function (a, b) {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       if (a.done !== b.done) return a.done ? 1 : -1;
       var oa = (typeof a.order === 'number') ? a.order : Infinity;
       var ob = (typeof b.order === 'number') ? b.order : Infinity;
@@ -477,7 +491,8 @@
 
   function buildItem(t) {
     var li = document.createElement('li');
-    li.className = 'todo-item' + (t.done ? ' is-done' : '') + (isOverdue(t) ? ' is-overdue' : '');
+    li.className = 'todo-item' + (t.done ? ' is-done' : '')
+      + (isOverdue(t) ? ' is-overdue' : '') + (t.pinned ? ' is-pinned' : '');
     li.setAttribute('data-id', t.id);
     li.setAttribute('draggable', 'true');
 
@@ -540,18 +555,28 @@
     var acts = document.createElement('div');
     acts.className = 'todo-actions';
 
+    var pinBtn = document.createElement('button');
+    pinBtn.className = 'icon-btn pin-btn' + (t.pinned ? ' is-pinned' : '');
+    pinBtn.title = t.pinned ? '取消置顶' : '置顶这条';
+    pinBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h5"/><path d="M10.6 3.5v5.3L7.9 11.2v1.6h8.2v-1.6l-2.7-2.4V3.5"/><path d="M12 12.8v7.7"/></svg>';
+    pinBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      togglePin(t.id);
+    });
+
     var editBtn = document.createElement('button');
-    editBtn.className = 'icon-btn';
+    editBtn.className = 'icon-btn edit-btn';
     editBtn.title = '编辑';
     editBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.6l3.9 3.9M4.5 19.5l.9-3.9L16 5a1.8 1.8 0 012.5 0l.5.5a1.8 1.8 0 010 2.5L8.4 18.6l-3.9.9z"/></svg>';
     editBtn.addEventListener('click', function () { openModal(t.id); });
 
     var delBtn = document.createElement('button');
-    delBtn.className = 'icon-btn danger';
+    delBtn.className = 'icon-btn del-btn danger';
     delBtn.title = '删除';
     delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.4A1.4 1.4 0 0110.9 4h2.2a1.4 1.4 0 011.4 1.4V7M6.5 7l.8 12a1.6 1.6 0 001.6 1.5h6.2a1.6 1.6 0 001.6-1.5L17.5 7"/></svg>';
     delBtn.addEventListener('click', function () { remove(t.id); });
 
+    acts.appendChild(pinBtn);
     acts.appendChild(editBtn);
     acts.appendChild(delBtn);
 
@@ -748,6 +773,16 @@
     render();
   }
 
+  function togglePin(id) {
+    var t = findTodo(id);
+    if (!t) return;
+    t.pinned = !t.pinned;
+    save();
+    render();
+    toast(t.pinned ? '已置顶：' + (t.title.length > 14 ? t.title.slice(0, 14) + '…' : t.title)
+                   : '已取消置顶');
+  }
+
   function remove(id) {
     var idx = -1;
     for (var i = 0; i < todos.length; i++) if (todos[i].id === id) { idx = i; break; }
@@ -781,6 +816,7 @@
     el.editRepeat.value = t.repeat || 'none';
     el.editNote.value = t.note || '';
     syncSeg(el.editPrioritySeg, editPriority);
+    syncPlainEmpty();
 
     el.modalMask.hidden = false;
     // 弹窗是整屏操作，标题栏（图钉/最小化/关闭）留在上面又挡又乱
@@ -792,6 +828,7 @@
     el.modalMask.hidden = true;
     document.body.classList.remove('modal-open');
     editingId = null;
+    resetIdleTimer();
   }
 
   function findTodo(id) {
@@ -1070,16 +1107,178 @@
   }
 
   function askToUpdate(data) {
-    var desc = '当前 v' + currentVersion + ' → 最新 v' + data.version +
-               (data.notes ? '\n\n' + data.notes : '') +
-               '\n\n下载新安装包后双击运行即可覆盖升级，待办数据不受影响。';
-    askConfirm('发现新版本 v' + data.version, desc, '下载安装包').then(function (ok) {
-      if (!ok) return;
-      var dl = data.downloads || {};
-      // 只发安装包：下载 setup 覆盖安装，和旧版共用同一个安装目录与数据目录
-      var url = dl.setup || dl.ghproxy || dl.ghfast || dl.github ||
-                ('https://github.com/' + REPO + '/releases/latest');
-      callApi('open_url', url);
+    openUpdateDialog(data);
+  }
+
+  /* ---------- 应用内更新：下载 + 进度 + 就地安装 ----------
+     不再把用户甩到浏览器。下载在 Python 侧后台跑，这里只轮询进度；
+     下完点「立即安装」→ 起一个分离进程跑安装包，自身退出让文件解锁。 */
+  var updState = { data: null, timer: null, busy: false, done: false };
+
+  function stopUpdatePoll() {
+    if (updState.timer) {
+      clearInterval(updState.timer);
+      updState.timer = null;
+    }
+  }
+
+  function fmtBytes(n) {
+    n = Number(n) || 0;
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return Math.round(n / 1024) + ' KB';
+    return n + ' B';
+  }
+
+  function updateUrls(dl) {
+    dl = dl || {};
+    // 后端会并行探速、自动挑最快的那个下，这里把候选都给过去
+    var list = Array.isArray(dl.mirrors) ? dl.mirrors.slice() : [];
+    [dl.ghfast, dl.setup, dl.ghproxy, dl.github].forEach(function (u) { list.push(u); });
+    var out = [];
+    list.forEach(function (u) {
+      if (u && out.indexOf(u) < 0) out.push(u);
+    });
+    return out;
+  }
+
+  function openUpdateDialog(data) {
+    if (!el.updMask) return;
+    updState.data = data;
+    updState.done = false;
+    updState.busy = false;
+    stopUpdatePoll();
+
+    el.updTitle.textContent = '发现新版本 v' + data.version;
+    el.updNotes.textContent =
+      '当前 v' + currentVersion + ' → 最新 v' + data.version +
+      (data.notes ? '\n\n' + data.notes : '') +
+      '\n\n下载完成后直接安装，待办与窗口位置都不受影响。';
+    el.updBar.hidden = true;
+    el.updFill.style.width = '0%';
+    el.updPct.textContent = '0%';
+    el.updSize.textContent = '';
+    el.updHint.textContent = '';
+    el.updHint.classList.remove('is-error');
+    el.updOk.textContent = '立即更新';
+    el.updOk.disabled = false;
+    el.updCancel.textContent = '稍后';
+
+    el.updMask.hidden = false;
+    document.body.classList.add('upd-open');
+  }
+
+  function closeUpdateDialog() {
+    stopUpdatePoll();
+    if (el.updMask) el.updMask.hidden = true;
+    document.body.classList.remove('upd-open');
+    updState.busy = false;
+    resetIdleTimer();
+  }
+
+  function applyUpdateProgress(st) {
+    var pct = Number(st.percent || 0);
+    el.updBar.hidden = false;
+    el.updFill.style.width = pct + '%';
+    el.updPct.textContent = pct + '%';
+    var total = Number(st.total || 0);
+    var got = Number(st.received || 0);
+    el.updSize.textContent = fmtBytes(got) + (total ? ' / ' + fmtBytes(total) : '');
+
+    if (st.state === 'done') {
+      stopUpdatePoll();
+      updState.busy = false;
+      updState.done = true;
+      el.updFill.style.width = '100%';
+      el.updPct.textContent = '100%';
+      el.updHint.classList.remove('is-error');
+      el.updHint.textContent = '下载完成。点「立即安装」会覆盖升级，应用会自动重启。';
+      el.updOk.textContent = '立即安装';
+      el.updOk.disabled = false;
+      el.updCancel.textContent = '稍后';
+      return;
+    }
+
+    if (st.state === 'error') {
+      stopUpdatePoll();
+      updState.busy = false;
+      el.updHint.classList.add('is-error');
+      el.updHint.textContent = '下载失败：' + (st.error || '未知错误') + '，可以再试一次。';
+      el.updOk.textContent = '重试';
+      el.updOk.disabled = false;
+      el.updCancel.textContent = '稍后';
+      return;
+    }
+
+    if (st.state === 'downloading') {
+      el.updHint.classList.remove('is-error');
+      el.updHint.textContent = st.phase === 'probing'
+        ? '正在挑最快的下载源…'
+        : '正在下载安装包…';
+    }
+  }
+
+  function startUpdateDownload() {
+    if (updState.busy) return;
+    updState.busy = true;
+    el.updBar.hidden = false;
+    el.updFill.style.width = '0%';
+    el.updPct.textContent = '0%';
+    el.updSize.textContent = '';
+    el.updHint.classList.remove('is-error');
+    el.updHint.textContent = '正在连接下载源…';
+    el.updOk.textContent = '下载中…';
+    el.updOk.disabled = true;
+    el.updCancel.textContent = '取消';
+
+    var urls = updateUrls(updState.data && updState.data.downloads);
+    callApi('download_update', JSON.stringify(urls)).then(function (raw) {
+      var r = parseState(raw);
+      if (!r || !r.ok) {
+        updState.busy = false;
+        el.updHint.classList.add('is-error');
+        el.updHint.textContent = '无法开始下载：' + ((r && r.error) || '未知错误');
+        el.updOk.textContent = '重试';
+        el.updOk.disabled = false;
+        el.updCancel.textContent = '稍后';
+        return;
+      }
+      stopUpdatePoll();
+      updState.timer = setInterval(function () {
+        callApi('get_download_progress').then(function (p) {
+          var st = parseState(p);
+          if (st) applyUpdateProgress(st);
+        });
+      }, 300);
+    });
+  }
+
+  if (el.updOk) {
+    el.updOk.addEventListener('click', function () {
+      if (updState.done) {
+        el.updOk.disabled = true;
+        el.updOk.textContent = '正在安装…';
+        el.updHint.classList.remove('is-error');
+        el.updHint.textContent = '应用即将关闭，安装完成后会自动打开。';
+        callApi('install_update');
+        return;
+      }
+      startUpdateDownload();
+    });
+  }
+
+  if (el.updCancel) {
+    el.updCancel.addEventListener('click', function () {
+      if (updState.busy) callApi('cancel_download');
+      closeUpdateDialog();
+    });
+  }
+
+  if (el.updMask) {
+    el.updMask.addEventListener('click', function (e) {
+      if (e.target === el.updMask) {
+        if (updState.busy) callApi('cancel_download');
+        closeUpdateDialog();
+      }
     });
   }
 
@@ -1207,6 +1406,19 @@
     syncSeg(el.editPrioritySeg, editPriority);
   });
 
+  /* 编辑弹窗里的日期/时间：空值时把 yyyy/mm/dd、--:-- 藏掉 */
+  function syncPlainEmpty() {
+    [el.editDate, el.editTime].forEach(function (node) {
+      if (!node) return;
+      node.classList.toggle('is-empty', !node.value);
+    });
+  }
+  [el.editDate, el.editTime].forEach(function (node) {
+    if (!node) return;
+    node.addEventListener('input', syncPlainEmpty);
+    node.addEventListener('change', syncPlainEmpty);
+  });
+
   el.modalClose.addEventListener('click', closeModal);
   el.editSave.addEventListener('click', saveEdit);
   el.editDelete.addEventListener('click', function () {
@@ -1218,7 +1430,8 @@
   });
 
   el.editText.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); saveEdit(); }
+    // Enter 直接保存；想换行用 Shift+Enter
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
     if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
   });
 
@@ -1235,6 +1448,11 @@
     }
     if (e.key === 'Escape' && !el.modalMask.hidden) closeModal();
     if (e.key === 'Escape' && document.body.classList.contains('is-adding')) closeComposer();
+    if (e.key === 'Escape' && el.updMask && !el.updMask.hidden) {
+      if (updState.busy) callApi('cancel_download');
+      closeUpdateDialog();
+      return;
+    }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addTodo(); }
   });
 
@@ -1252,6 +1470,7 @@
     if (!el.settingsPanel) return;
     el.settingsPanel.hidden = true;
     document.body.classList.remove('is-settings');
+    resetIdleTimer();
     // 下次进来从头看，别停在上次滚到的位置
     var body = el.settingsPanel.querySelector('.settings-body');
     if (body) body.scrollTop = 0;
@@ -1271,13 +1490,33 @@
       }
     }
     if (el.setAutoStart) el.setAutoStart.classList.toggle('is-on', winState.autostart);
-    if (el.sizeSeg) {
+    if (el.setOpacity) {
+    // 拖动时高频调用，70ms 节流；松手再补一次确保落盘
+    var opacityTimer = null;
+    el.setOpacity.addEventListener('input', function () {
+      var v = Number(el.setOpacity.value) || 0;
+      winState.opacity = v;
+      if (el.opacityVal) el.opacityVal.textContent = v + '%';
+      if (opacityTimer) return;
+      opacityTimer = setTimeout(function () {
+        opacityTimer = null;
+        callApi('set_opacity', String(el.setOpacity.value));
+      }, 70);
+    });
+    el.setOpacity.addEventListener('change', function () {
+      callApi('set_opacity', String(el.setOpacity.value));
+    });
+  }
+
+  if (el.sizeSeg) {
       var btns = el.sizeSeg.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
         btns[i].classList.toggle('is-active',
           Number(btns[i].getAttribute('data-preset')) === winState.mini_preset);
       }
     }
+    if (el.setOpacity) el.setOpacity.value = String(winState.opacity);
+    if (el.opacityVal) el.opacityVal.textContent = String(winState.opacity) + '%';
     if (el.setCount) el.setCount.textContent = String(todos.length);
   }
 
@@ -1320,6 +1559,7 @@
 
   function closeComposer() {
     document.body.classList.remove('is-adding');
+    resetIdleTimer();
   }
 
   if (el.btnQuickAdd) {
@@ -1571,8 +1811,8 @@
     mode: 'mini', on_top: true, snap: true,
     app_name: 'xixiの待办', mini_preset: 1,
     collapsed: false, collapse_edge: '',
-    collapse_min: true, auto_collapse: true,
-    close_action: 'quit', autostart: false
+    collapse_min: true, auto_collapse: false,
+    close_action: 'quit', autostart: false, opacity: 100
   };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
@@ -1628,6 +1868,7 @@
     if (typeof st.auto_collapse === 'boolean') winState.auto_collapse = st.auto_collapse;
     if (typeof st.close_action === 'string') winState.close_action = st.close_action;
     if (typeof st.autostart === 'boolean') winState.autostart = st.autostart;
+    if (typeof st.opacity === 'number') winState.opacity = st.opacity;
 
     applyMode(st.mode === 'full' ? 'full' : 'mini');
     applyOnTop(st.on_top);
@@ -1668,6 +1909,8 @@
     document.body.classList.toggle('collapsed-h', horizontal);
     if (el.collapsedMark) el.collapsedMark.hidden = !on;
     if (on) closeSettings();
+    // 展开回来重新开始空闲计时；收起时自然停表
+    if (!on) resetIdleTimer();
   }
 
   function expandFromEdge() {
@@ -1687,6 +1930,7 @@
     callApi('get_window_state').then(function (raw) {
       var st = parseState(raw);
       if (st) applyWindowState(st);
+      resetIdleTimer();
     });
   }
 
@@ -1696,6 +1940,44 @@
     // 真正的同步由 start() 里桥接就绪后的那次负责。
     syncWindowState();
   }
+
+  /* ---------- 空闲自动收起 ----------
+     小卡片放在桌角不动，就该自己缩成三个点，别一直摊在那儿占地。
+     任何鼠标移动/按键/滚轮都算「还在用」，重新计时；
+     设置页、编辑弹窗、添加抽屉、更新面板开着时不算空闲。 */
+  var idleTimer = null;
+  var IDLE_COLLAPSE_MS = 10000;
+
+  function canIdleCollapse() {
+    if (!isMiniMode() || winState.collapsed) return false;
+    if (el.settingsPanel && !el.settingsPanel.hidden) return false;
+    if (el.modalMask && !el.modalMask.hidden) return false;
+    if (el.updMask && !el.updMask.hidden) return false;
+    if (el.dlgMask && !el.dlgMask.hidden) return false;
+    if (document.body.classList.contains('is-adding')) return false;
+    if (document.body.classList.contains('is-resizing')) return false;
+    return true;
+  }
+
+  function resetIdleTimer() {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+    if (!canIdleCollapse()) return;
+    idleTimer = setTimeout(function () {
+      idleTimer = null;
+      if (!canIdleCollapse()) return;
+      callApi('collapse_now').then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyWindowState(st);
+      });
+    }, IDLE_COLLAPSE_MS);
+  }
+
+  ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) {
+    document.addEventListener(ev, resetIdleTimer, { passive: true });
+  });
 
   /* ---------- 兜底轮询：后端自己收起时前端也得知道 ----------
      拖动时鼠标滑出窗口，前端收不到 mouseup，自动收起就只能由后端的
@@ -1836,6 +2118,7 @@
     setComposeRepeat: setComposeRepeat,
     getComposeRepeat: function () { return composeRepeat; },
     moveTodo: moveTodo,
+    togglePin: togglePin,
     boot: boot,
     start: start,
     applyMode: applyMode,
@@ -1847,6 +2130,7 @@
     compareVer: compareVer,
     parseVer: parseVer,
     getUpdateState: function () { return updateState; },
+    openUpdateDialog: openUpdateDialog,
     setUpdateBadge: setUpdateBadge,
     checkUpdate: checkUpdate,
     getCurrentVersion: function () { return currentVersion; }

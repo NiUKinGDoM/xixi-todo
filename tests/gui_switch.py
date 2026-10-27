@@ -102,6 +102,12 @@ def main() -> None:
         for sel in ("setSnap", "setAutoCollapse", "setCollapse", "setTop"):
             # 关掉自动贴边/自动收起，避免点开关时窗口被吸走
             before = on_of(sel)
+            # 先滚到视野中间，模拟真人「滚下去点」的路径
+            win.evaluate_js(
+                "var e=document.getElementById('%s');"
+                "if(e&&e.scrollIntoView)e.scrollIntoView({block:'center'});" % sel
+            )
+            time.sleep(0.45)
             pt = sxy(win, "#" + sel)
             if not pt:
                 check(f"{sel} 可定位", False, "取不到坐标")
@@ -131,6 +137,11 @@ def main() -> None:
             except Exception:
                 return False
 
+        win.evaluate_js(
+            "var e=document.getElementById('setAutoStart');"
+            "if(e&&e.scrollIntoView)e.scrollIntoView({block:'center'});"
+        )
+        time.sleep(0.45)
         pt = sxy(win, "#setAutoStart")
         before = on_of("setAutoStart")
         click(pt)
@@ -144,6 +155,11 @@ def main() -> None:
               f"开关={on_of('setAutoStart')} 注册表={reg_exists()}")
 
         # 点文字区域也应能切（很多人不会去瞄那个小滑块）
+        win.evaluate_js(
+            "var e=document.getElementById('setAutoCollapse');"
+            "if(e&&e.scrollIntoView)e.scrollIntoView({block:'center'});"
+        )
+        time.sleep(0.45)
         pt = sxy(win, "#setAutoCollapse")
         row = win.evaluate_js(
             "(function(){var e=document.getElementById('setAutoCollapse');"

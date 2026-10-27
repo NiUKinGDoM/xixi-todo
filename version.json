@@ -1,11 +1,19 @@
 {
-  "version": "1.5.1",
+  "version": "1.5.2",
   "date": "2026-10-27",
-  "notes": "自动收起修好了：拖到边缘真的收成小条，页面同步切成三个点；两种收边方式改为二选一；设置页与编辑弹窗不再露出标题栏；编辑待办在小卡片里能完整填写，选项不再超出边界",
+  "notes": "应用内直接更新，不再跳浏览器（下载有进度、下完就地安装）；小卡片整体透明度可调；编辑待办的内容框改成三行；日期/时间空值不再显示 yyyy/mm/dd；小卡片闲置 10 秒自动缩成三个点",
   "downloads": {
-    "setup": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
-    "ghproxy": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+    "mirrors": [
+      "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+      "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+      "https://ghproxy.net/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+      "https://github.moeyy.xyz/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+      "https://gh.llkk.cc/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+      "https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe"
+    ],
+    "setup": "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
     "ghfast": "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+    "ghproxy": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
     "github": "https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe"
   }
 }
