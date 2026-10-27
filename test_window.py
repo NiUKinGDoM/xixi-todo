@@ -377,6 +377,23 @@ def main() -> int:
     saved = json.loads(STATE_FILE.read_text("utf-8"))
     check("收边开关已落盘", saved.get("collapse_min") is True, str(saved)[:80])
 
+    # 两种收边方式互斥：开一个必须关掉另一个
+    api_c.set_auto_collapse("1")
+    check("开启自动收起会关掉最小化收边",
+          api_c.state["auto_collapse"] is True and api_c.state["collapse_min"] is False,
+          f"auto={api_c.state['auto_collapse']} min={api_c.state['collapse_min']}")
+    api_c.set_collapse_min("1")
+    check("开启最小化收边会关掉自动收起",
+          api_c.state["collapse_min"] is True and api_c.state["auto_collapse"] is False,
+          f"auto={api_c.state['auto_collapse']} min={api_c.state['collapse_min']}")
+
+    # 老配置两个都开着，读盘时要归一（只留最小化收边）
+    STATE_FILE.write_text(json.dumps({"collapse_min": True, "auto_collapse": True}), "utf-8")
+    normalized = load_state()
+    check("老配置归一为单一收边方式",
+          normalized["collapse_min"] is True and normalized["auto_collapse"] is False,
+          f"auto={normalized['auto_collapse']} min={normalized['collapse_min']}")
+
     # 自启动：测试目录下不写真实注册表，只回读
     before = appmod.is_autostart_enabled()
     got = json.loads(api_c.set_autostart("1"))

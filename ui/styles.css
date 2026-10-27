@@ -2363,3 +2363,95 @@ body.mode-mini .settings::after {
   height: 18px;
   background: linear-gradient(to top, var(--canvas) 0%, rgba(244, 246, 250, 0) 100%);
 }
+
+/* ============================================================
+   编辑弹窗：小卡片里也要能完整填完
+   原来 .modal 没有高度上限，380x560 的卡片装不下“内容/优先级/日期/
+   时间/重复/备注/按钮”，超出的部分直接顶到窗口外，既看不见也点不到。
+   现在：整块限高、正文区自己滚、头尾（标题与保存/删除）钉住不动。
+   顺带把输入控件都钉成 100% 宽 —— date/time/select 的默认宽度会
+   撑破两列布局，看起来就是“选项跑出边界”。
+   ============================================================ */
+.modal-mask { padding: 12px; }
+
+.modal {
+  width: 420px;
+  max-width: calc(100vw - 26px);
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+.modal-head { flex: none; margin-bottom: 14px; }
+.modal-foot { flex: none; margin-top: 14px; }
+
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 12px;
+  padding-right: 2px;
+}
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-thumb {
+  background: #d3dae6;
+  border-radius: 99px;
+}
+
+/* 所有输入控件都不许撑破容器 */
+#editText,
+.plain-input,
+.note-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+select.plain-input { text-overflow: ellipsis; }
+.note-input { resize: none; }
+
+/* 标题是这条待办最重要的信息，给它更大的字号和高度 */
+#editText {
+  padding: 11px 12px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+/* 小卡片里两列会把日期/重复挤到框外，改成单列 */
+body.mode-mini .modal { padding: 14px; }
+body.mode-mini .modal-head h3 { font-size: 15px; }
+body.mode-mini .field-row {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+body.mode-mini .modal-body { gap: 10px; }
+body.mode-mini .modal-foot { margin-top: 12px; }
+
+/* 确认弹窗同样限高，长文案（比如更新说明）也能滚 */
+.dlg {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+/* 设置页是独立整页，不要再露出小卡片的标题栏（标题/图钉/关闭这些）。
+   之前靠 z-index 盖住，但两种模式下的层叠上下文不同，偶尔会透出来；
+   直接在打开设置时把标题栏整个收起，最干净。 */
+body.is-settings .minibar { display: none; }
+
+/* 小卡片里的编辑弹窗：再压一档，六个字段全进得去，不用滚也能填完 */
+body.mode-mini .modal-body { gap: 8px; }
+body.mode-mini .field { gap: 5px; }
+body.mode-mini .field-label { font-size: 10.5px; }
+body.mode-mini #editText,
+body.mode-mini .plain-input { padding: 7px 10px; font-size: 12.5px; }
+body.mode-mini #editText { padding: 9px 10px; font-size: 13.5px; }
+body.mode-mini .note-input { min-height: 46px; }
+
+/* 底部按钮和正文分开，别看着像把备注压住了 */
+.modal-foot {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* 弹窗打开时同样收起标题栏：弹窗本来就覆盖全窗，留着它只会露一条 */
+body.modal-open .minibar { display: none; }

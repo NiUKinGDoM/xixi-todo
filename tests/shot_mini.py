@@ -119,6 +119,25 @@ def main() -> None:
                            "document.getElementById('btnSettingsMini').click()")
         time.sleep(0.9)
         grab(hwnd, OUT / "shot_settings.png")
+
+        # 完整视图 + 设置页：确认顶栏不会压在设置页上
+        window.evaluate_js("document.getElementById('setBack').click()")
+        time.sleep(0.4)
+        window.evaluate_js("document.getElementById('btnMode').click()")
+        time.sleep(1.4)
+        grab(hwnd, OUT / "shot_full.png")
+        window.evaluate_js("document.getElementById('btnSettings').click()")
+        time.sleep(0.9)
+        grab(hwnd, OUT / "shot_full_settings.png")
+
+        # 小卡片里打开编辑弹窗
+        window.evaluate_js("document.getElementById('setBack').click()")
+        time.sleep(0.4)
+        window.evaluate_js("document.getElementById('btnMode').click()")
+        time.sleep(1.4)
+        window.evaluate_js("document.querySelector('.todo-item .icon-btn').click()")
+        time.sleep(0.8)
+        grab(hwnd, OUT / "shot_modal.png")
         os._exit(0)
 
     webview.start(runner, debug=False)

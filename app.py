@@ -22,7 +22,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -182,8 +182,10 @@ DEFAULT_STATE = {
     "mini_preset": 1,
     "collapsed": False,
     "collapse_edge": "",
+    # 两种收边方式互斥，默认用「最小化时收」——
+    # 它由用户主动点最小化触发，比拖拽自动收更可控
     "collapse_min": True,
-    "auto_collapse": True,
+    "auto_collapse": False,
     "close_action": "quit",
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
@@ -199,8 +201,8 @@ def load_state() -> dict:
         "mini_preset": DEFAULT_STATE["mini_preset"],
         "collapsed": False,
         "collapse_edge": "",
-        "collapse_min": True,
-        "auto_collapse": True,
+        "collapse_min": DEFAULT_STATE["collapse_min"],
+        "auto_collapse": DEFAULT_STATE["auto_collapse"],
         "close_action": "quit",
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
@@ -240,6 +242,12 @@ def load_state() -> dict:
                         state[k].update({kk: vv for kk, vv in raw[k].items() if vv is not None})
     except Exception as exc:
         _log(f"load state failed: {exc}")
+
+    # 老配置里两个开关可能都是 true（互斥规则之前存的），
+    # 归一为只留一个：优先保留「最小化时收」，它更可控
+    if state.get("collapse_min") and state.get("auto_collapse"):
+        state["auto_collapse"] = False
+
     return state
 
 
@@ -835,9 +843,23 @@ class Api:
                 "collapsed": bool(self.state.get("collapsed", False)),
                 "collapse_edge": self.state.get("collapse_edge", ""),
                 "collapse_min": bool(self.state.get("collapse_min", True)),
-                "auto_collapse": bool(self.state.get("auto_collapse", True)),
+                "auto_collapse": bool(self.state.get("auto_collapse", False)),
                 "close_action": self.state.get("close_action", "quit"),
                 "autostart": is_autostart_enabled(),
+            },
+            ensure_ascii=False,
+        )
+
+    def get_collapsed_state(self) -> str:
+        """轻量查询：只回收起状态。
+
+        给前端兜底轮询用。get_window_state 每次都要读注册表判断自启动，
+        不能拿来高频调用。
+        """
+        return json.dumps(
+            {
+                "collapsed": bool(self.state.get("collapsed")),
+                "collapse_edge": self.state.get("collapse_edge", ""),
             },
             ensure_ascii=False,
         )
@@ -864,8 +886,15 @@ class Api:
         return self.get_window_state()
 
     def set_collapse_min(self, enabled) -> str:
-        """开关：最小化时是否收进屏幕边缘。"""
-        self.state["collapse_min"] = bool(enabled)
+        """开关：最小化时是否收进屏幕边缘。
+
+        与「贴边后自动收起」互斥：两种收边方式同时开着会互相打架，
+        开一个就把另一个关掉。
+        """
+        value = bool(enabled)
+        self.state["collapse_min"] = value
+        if value:
+            self.state["auto_collapse"] = False
         save_state(self.state)
         return self.get_window_state()
 
@@ -878,8 +907,14 @@ class Api:
         return self.get_window_state()
 
     def set_auto_collapse(self, enabled) -> str:
-        """开关：拖到屏幕边缘松手后是否直接收进边缘。"""
-        self.state["auto_collapse"] = bool(enabled)
+        """开关：拖到屏幕边缘松手后是否直接收进边缘。
+
+        与「最小化收进边缘」互斥，开一个关另一个。
+        """
+        value = bool(enabled)
+        self.state["auto_collapse"] = value
+        if value:
+            self.state["collapse_min"] = False
         save_state(self.state)
         return self.get_window_state()
 
@@ -904,16 +939,36 @@ class Api:
         return self._dragging
 
     def snap_now(self) -> str:
-        """拖动结束后调用：靠近屏幕边缘就吸上去。"""
+        """拖动结束后调用：靠近屏幕边缘就吸上去，需要时直接收进边缘。
+
+        吸附和自动收起必须在同一个调用里做完，前端才知道窗口最终是什么形态。
+        之前收起是后端防抖线程单独干的，前端毫不知情：页面还按 380x560 排版，
+        却被硬塞进 104x20 的窗口 —— 看起来就是「整个软件被压成一根条」，
+        连放大的三个点都不见了。
+        """
         win = self._win()
         if win is None or self.state.get("collapsed"):
             return self.get_window_state()
-        # 吸附本身会改坐标 → 触发 moved → 再排一次自动贴边判定。
-        # 吸完先静默一小会儿，避免「吸附 → 判定 → 自动收起」连锁。
-        self._mute_snap(0.5)
-        result = snap_window_to_edge(win, bool(self.state.get("snap", True)))
-        if result:
-            _log(f"snapped to {result}")
+        if not bool(self.state.get("snap", True)):
+            return self.get_window_state()
+
+        result = snap_window_to_edge(win, True)
+        if not result:
+            return self.get_window_state()
+
+        _log(f"snapped to {result}")
+        self._snapshot(self.state.get("mode", "mini"))
+
+        # 只有用户真的拖过才自动收；程序自己挪窗口（切模式、展开）不算
+        if (bool(self.state.get("auto_collapse", False))
+                and self._user_dragged
+                and not self.state.get("collapsed")):
+            edge = self._nearest_edge(win, limit=None)
+            if edge:
+                self._mute_snap(1.0)
+                return self.collapse_window(edge)
+
+        save_state(self.state)
         return self.get_window_state()
 
     def set_mini_preset(self, index) -> str:
@@ -1556,7 +1611,7 @@ def main() -> None:
                 api._snapshot(state.get("mode", "mini"))
                 save_state(state)
                 # 贴到边就收进边缘，不用再点一次最小化
-                if (state.get("auto_collapse", True)
+                if (state.get("auto_collapse", False)
                         and getattr(api, "_user_dragged", False)
                         and not state.get("collapsed")):
                     api._mute_snap(1.0)

@@ -1,7 +1,7 @@
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "date": "2026-10-27",
-  "notes": "修复置顶卡死与多处按钮点不动；拖动排序不再带着整个窗口跑；小卡片改为加号唤起添加抽屉；添加待办时可直接选重复周期",
+  "notes": "自动收起修好了：拖到边缘真的收成小条，页面同步切成三个点；两种收边方式改为二选一；设置页与编辑弹窗不再露出标题栏；编辑待办在小卡片里能完整填写，选项不再超出边界",
   "downloads": {
     "setup": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
     "ghproxy": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",

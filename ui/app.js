@@ -783,11 +783,14 @@
     syncSeg(el.editPrioritySeg, editPriority);
 
     el.modalMask.hidden = false;
+    // 弹窗是整屏操作，标题栏（图钉/最小化/关闭）留在上面又挡又乱
+    document.body.classList.add('modal-open');
     setTimeout(function () { el.editText.focus(); el.editText.select(); }, 60);
   }
 
   function closeModal() {
     el.modalMask.hidden = true;
+    document.body.classList.remove('modal-open');
     editingId = null;
   }
 
@@ -1368,7 +1371,8 @@
       callApi('set_collapse_min', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applyWindowState(st); else { winState.collapse_min = next; renderSettings(); }
-        toast(next ? '最小化时收进边缘：开' : '最小化时收进边缘：关');
+        toast(next ? '最小化时收进边缘（已关掉拖边自动收起）'
+                   : '最小化时不再收边');
       });
     });
   }
@@ -1379,7 +1383,8 @@
       callApi('set_auto_collapse', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applyWindowState(st); else { winState.auto_collapse = next; renderSettings(); }
-        toast(next ? '拖到边缘松手就收进边缘' : '贴边只吸附，不自动收起');
+        toast(next ? '拖到边缘松手就收进边缘（已关掉最小化收边）'
+                   : '贴边只吸附，不自动收起');
       });
     });
   }
@@ -1477,7 +1482,15 @@
     draggingNow = false;
     callApi('set_dragging', '').then(function () {
       if (!winState.snap) return;
-      setTimeout(function () { callApi('snap_now'); }, 60);
+      // 松手后这一刻才真正决定窗口命运：只是吸边，还是直接收成小条。
+      // 后端把结论放在返回值里，前端必须照着切 UI —— 否则窗口变成
+      // 104x20，页面还按 380x560 排版，整块界面就被压扁了。
+      setTimeout(function () {
+        callApi('snap_now').then(function (raw) {
+          var st = parseState(raw);
+          if (st) applyWindowState(st);
+        });
+      }, 60);
     });
   });
 
@@ -1663,12 +1676,36 @@
     });
   }
 
-  function initWindowUi() {
-    applyMode(window.innerWidth < 720 ? 'mini' : 'full');
+  function syncWindowState() {
     callApi('get_window_state').then(function (raw) {
-      applyWindowState(parseState(raw));
+      var st = parseState(raw);
+      if (st) applyWindowState(st);
     });
   }
+
+  function initWindowUi() {
+    applyMode(window.innerWidth < 720 ? 'mini' : 'full');
+    // 这里通常还拿不到桥接（app.js 跑得比 pywebview 注入早），
+    // 真正的同步由 start() 里桥接就绪后的那次负责。
+    syncWindowState();
+  }
+
+  /* ---------- 兜底轮询：后端自己收起时前端也得知道 ----------
+     拖动时鼠标滑出窗口，前端收不到 mouseup，自动收起就只能由后端的
+     防抖线程完成 —— 那条路没有返回值。这里对一下状态，别让页面
+     还按卡片尺寸排版、窗口却已经缩成 20px 的缝。
+     只在「贴边自动收起」开着时才需要（其它路径都有返回值）。 */
+  setInterval(function () {
+    if (!winState.auto_collapse) return;
+    callApi('get_collapsed_state').then(function (raw) {
+      var st = parseState(raw);
+      if (!st) return;
+      var on = !!st.collapsed;
+      var edge = st.collapse_edge || '';
+      if (on === !!winState.collapsed && (!on || edge === winState.collapse_edge)) return;
+      applyCollapsed(on, edge);
+    });
+  }, 700);
 
   if (el.btnMode) {
     el.btnMode.addEventListener('click', function () {
@@ -1747,7 +1784,10 @@
     initVersion();
     boot();
 
-    window.addEventListener('pywebviewready', function () { boot(); });
+    window.addEventListener('pywebviewready', function () {
+      boot();
+      syncWindowState();
+    });
 
     var tries = 0;
     var timer = setInterval(function () {
@@ -1756,6 +1796,10 @@
       if (a && typeof a.load_todos === 'function') {
         clearInterval(timer);
         boot();
+        // 桥接就绪后必须再同步一次窗口状态：
+        // initWindowUi 那次基本都拿不到 api，不同步的话开关会一直显示
+        // 前端写死的默认值，跟磁盘里的真实配置对不上。
+        syncWindowState();
         // 先拿到本地版本号，再延迟静默检查更新，避免误报
         initVersion().then(function () {
           setTimeout(function () { checkUpdate(true); }, 3000);
