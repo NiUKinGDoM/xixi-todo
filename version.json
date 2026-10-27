@@ -1,7 +1,7 @@
 {
-  "version": "1.5.3",
+  "version": "1.5.4",
   "date": "2026-10-27",
-  "notes": "列表里的置顶/编辑/删除改成悬停浮现，不再挤压标题；设置页新增「卡片底色浓度」可调（文字始终清晰）；设置页保留顶栏，可随时拖窗口/最小化/关闭；改为单进程启动，任务管理器不再出现两个同名进程，启动更快",
+  "notes": "修复应用内更新弹「Windows 找不到 '\\' 文件」：安装程序现在能正常启动、静默装完并自动重开应用；顺带修掉窗口状态偶发保存失败",
   "downloads": {
     "mirrors": [
       "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",

@@ -182,6 +182,80 @@ def main() -> int:
                                today, "10:00", set())
     check("提醒文案带任务标题", notif5 and notif5[0][2] == "开会", str(notif5))
 
+    # ---------- 应用内更新：启动安装程序的命令 ----------
+    # 回归点：这条命令曾拆成 ["cmd", "/c", ...] 传进去，subprocess 把内层
+    # 引号转义成 \"，cmd 不认这种转义，start 就去打开一个叫「\」的文件，
+    # 弹出「Windows 找不到 '\' 文件」。必须整条字符串原样交给 CreateProcess。
+    import subprocess as _sp
+    import threading as _th
+
+    fake_setup = tmp / "xixi-todo-setup.exe"
+    fake_setup.write_bytes(b"MZ")  # 只要存在就行，不会真执行
+
+    captured: dict = {}
+
+    class _FakePopen:
+        def __init__(self, args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+
+    class _FakeTimer:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            pass
+
+    real_popen, real_timer = _sp.Popen, _th.Timer
+    _sp.Popen, _th.Timer = _FakePopen, _FakeTimer
+    try:
+        api_upd = Api(store, {})
+        api_upd._dl["path"] = str(fake_setup)
+        launched = api_upd.install_update()
+    finally:
+        _sp.Popen, _th.Timer = real_popen, real_timer
+
+    args = captured.get("args")
+    check("更新：能发起安装", launched is True, str(launched))
+    check("更新：命令以字符串传递（不拆成列表）",
+          isinstance(args, str), type(args).__name__)
+    check("更新：路径被引号完整包住",
+          isinstance(args, str) and f'"{fake_setup}"' in args, str(args)[:120])
+    check("更新：不会再出现被转义的 \\\"",
+          isinstance(args, str) and '\\"' not in args, str(args)[:120])
+    check("更新：等待安装结束再返回",
+          isinstance(args, str) and "/wait" in args, str(args)[:120])
+    check("更新：静默安装参数齐全",
+          isinstance(args, str) and "/SILENT" in args and "/CLOSEAPPLICATIONS" in args,
+          str(args)[:120])
+    check("更新：脱离父进程（父进程退出后仍继续）",
+          bool(captured.get("kwargs", {}).get("creationflags", 0) & 0x00000008),
+          str(captured.get("kwargs", {}).get("creationflags")))
+
+    # ---------- 状态落盘：多进程不会撞同一个临时文件 ----------
+    import subprocess as _sp2
+    state_path = tmp / "state.json"
+    code = (
+        "import sys, json, pathlib\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from app import _atomic_write_text\n"
+        f"p = pathlib.Path({str(state_path)!r})\n"
+        "for i in range(40):\n"
+        "    _atomic_write_text(p, json.dumps({'i': i}))\n"
+    )
+    procs = [_sp2.Popen([sys.executable, "-c", code]) for _ in range(3)]
+    codes = [p.wait() for p in procs]
+    check("并发写同一个状态文件不报错", all(c == 0 for c in codes), str(codes))
+    try:
+        json.loads(state_path.read_text(encoding="utf-8"))
+        ok_json = True
+    except Exception as exc:
+        ok_json = False
+        detail_json = str(exc)
+    check("并发写后文件仍是合法 JSON", ok_json, "" if ok_json else detail_json)
+    leftovers = list(tmp.glob("state.json.*.tmp"))
+    check("没有残留临时文件", not leftovers, str(leftovers)[:80])
+
     print("\n===== 新功能后端测试 =====")
     for r in RESULTS:
         print(r)

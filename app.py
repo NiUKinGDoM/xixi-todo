@@ -27,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -130,6 +130,36 @@ def _log(msg: str) -> None:
         pass
 
 
+def _atomic_write_text(path: Path, text: str, retries: int = 4) -> bool:
+    """原子写文本：先写唯一临时文件，再替换目标。
+
+    临时文件名带进程号与线程号。以前固定叫 xxx.tmp，只要同时存在两个进程
+    （比如更新时新旧版本短暂并存），后一个就会撞上「文件被占用」，
+    日志里刷一串 Permission denied，窗口状态直接丢。
+    另外杀毒软件偶尔会短暂锁住刚写完的文件，所以替换失败时重试几次。
+    """
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+    except Exception as exc:
+        _log(f"write {tmp.name} failed: {exc}")
+        return False
+    for i in range(retries):
+        try:
+            os.replace(tmp, path)
+            return True
+        except Exception as exc:
+            if i == retries - 1:
+                _log(f"replace {path.name} failed: {exc}")
+                break
+            time.sleep(0.05 * (i + 1))
+    try:
+        tmp.unlink()
+    except Exception:
+        pass
+    return False
+
+
 # --------------------------------------------------------------------------
 # 数据存储
 # --------------------------------------------------------------------------
@@ -159,16 +189,12 @@ class JsonList:
 
     def save(self, items: list) -> bool:
         with self._lock:
-            tmp = self.path.with_suffix(".tmp")
-            try:
-                tmp.write_text(
-                    json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                tmp.replace(self.path)
-                return True
-            except Exception as exc:
-                _log(f"save {self.path.name} failed: {exc}")
-                return False
+            ok = _atomic_write_text(
+                self.path, json.dumps(items, ensure_ascii=False, indent=2)
+            )
+            if not ok:
+                _log(f"save {self.path.name} failed")
+            return ok
 
 
 class Store(JsonList):
@@ -266,12 +292,7 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    try:
-        tmp = STATE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), "utf-8")
-        tmp.replace(STATE_FILE)
-    except Exception as exc:
-        _log(f"save state failed: {exc}")
+    _atomic_write_text(STATE_FILE, json.dumps(state, ensure_ascii=False, indent=2))
 
 
 def _launch_command() -> str:
@@ -913,10 +934,16 @@ class Api:
         return True
 
     def install_update(self) -> bool:
-        """退出自己，然后静默覆盖安装。
+        """退出自己，然后静默覆盖安装，装完把新版本拉起来。
 
-        正在运行的 exe 是锁着的，安装包直接写会失败，所以先用 cmd 起一个
-        分离进程：等两秒（够本进程完全退出）再启动安装程序。
+        正在运行的 exe 是锁着的，安装包直接写会失败，所以先起一个分离的
+        cmd：等两秒（够本进程完全退出）→ 静默安装 → 重新打开应用。
+
+        这里绝对不能把命令拆成 ["cmd", "/c", ...] 传进去：
+        subprocess 会按 Windows 参数规则把内层引号转义成 \\"，
+        而 cmd.exe 不认反斜杠转义，会把 \\ 当成独立参数，
+        start 于是去打开一个叫「\\」的文件，弹出「Windows 找不到 '\' 文件」。
+        传一整个字符串才是原样交给 CreateProcess。
         """
         path = str(self._dl.get("path") or "")
         if not path or not Path(path).exists():
@@ -925,16 +952,29 @@ class Api:
         try:
             DETACHED_PROCESS = 0x00000008
             CREATE_NEW_PROCESS_GROUP = 0x00000200
-            cmd = f'ping -n 3 127.0.0.1 >nul & start "" "{path}" /SILENT /CLOSEAPPLICATIONS'
+            parts = [
+                "ping -n 3 127.0.0.1 >nul",
+                f'start "" /wait "{path}" /SILENT /CLOSEAPPLICATIONS',
+            ]
+            # 装完把自己重新拉起来（只有打包后才这么做，开发态没意义）
+            if getattr(sys, "frozen", False):
+                parts.append(f'start "" "{sys.executable}"')
+            cmd = "cmd /c " + " & ".join(parts)
             subprocess.Popen(
-                ["cmd", "/c", cmd],
+                cmd,
                 creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
                 close_fds=True,
             )
             _log(f"install_update: launching {path}")
         except Exception as exc:
             _log(f"install_update failed: {exc}")
-            return False
+            # 兜底：至少把安装程序界面弹出来，用户能自己点下一步
+            try:
+                os.startfile(path)
+                _log("install_update: fallback to shell open")
+            except Exception as exc2:
+                _log(f"install_update fallback failed: {exc2}")
+                return False
 
         # 给自己留一点点时间把返回值送到前端，再关窗
         threading.Timer(0.4, self.quit_app).start()
