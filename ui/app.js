@@ -11,6 +11,7 @@
   var filter = 'all';           // 状态筛选
   var editingId = null;
   var composePriority = 'medium';
+  var composeRepeat = 'none';
   var editPriority = 'medium';
   var toastTimer = null;
   var dragId = null;
@@ -23,6 +24,8 @@
     empty: $('emptyState'),
     inputText: $('inputText'),
     inputDate: $('inputDate'),
+    inputRepeat: $('inputRepeat'),
+    repeatField: $('repeatField'),
     addBtn: $('addBtn'),
     clearDate: $('clearDate'),
     prioritySeg: $('prioritySeg'),
@@ -53,6 +56,8 @@
     /* 窗口 / 迷你模式 */
     btnSettings: $('btnSettings'),
     btnSettingsMini: $('btnSettingsMini'),
+    btnQuickAdd: $('btnQuickAdd'),
+    composer: document.querySelector('.composer'),
     setAutoStart: $('setAutoStart'),
     setCollapse: $('setCollapse'),
     setAutoCollapse: $('setAutoCollapse'),
@@ -684,7 +689,7 @@
       priority: q.priority || composePriority,
       due: q.due || el.inputDate.value || '',
       time: q.time || '',
-      repeat: q.repeat || 'none',
+      repeat: q.repeat || composeRepeat || 'none',
       note: '',
       done: false,
       createdAt: Date.now()
@@ -703,8 +708,11 @@
 
     el.inputText.value = '';
     el.inputDate.value = '';
+    setComposeRepeat('none');
     syncDateField();
     updateParseHint();
+    // 抽屉保持打开：连着记几条是常态，加完一条就收反而碍事。
+    // 点抽屉外面或按 Esc 才收起。
     el.inputText.focus();
     save();
     render();
@@ -899,6 +907,15 @@
     field.classList.toggle('is-empty', !el.inputDate.value);
   }
 
+  /* ---------- 添加区的重复周期 ----------
+     和日期并排：都是「什么时候做」的信息。
+     选中非「不重复」时整块变强调色，一眼能看出这条是周期任务。 */
+  function setComposeRepeat(value) {
+    composeRepeat = value || 'none';
+    if (el.inputRepeat) el.inputRepeat.value = composeRepeat;
+    if (el.repeatField) el.repeatField.classList.toggle('is-set', composeRepeat !== 'none');
+  }
+
   /* ---------- 快速语法提示 ---------- */
   function updateParseHint() {
     if (!el.parseHint) return;
@@ -909,7 +926,11 @@
     var bits = [];
     if (q.due) bits.push(formatDue(q.due));
     if (q.time) bits.push(q.time);
-    if (q.repeat) bits.push(REPEAT_TEXT[q.repeat]);
+    if (q.repeat) {
+      bits.push(REPEAT_TEXT[q.repeat]);
+      // 文字里写了「每天/每周」就顺手把下拉同步过去，避免两处显示不一致
+      if (q.repeat !== composeRepeat) setComposeRepeat(q.repeat);
+    }
     if (q.priority) bits.push('优先级' + PRIO_TEXT[q.priority]);
 
     if (!bits.length) { el.parseHint.hidden = true; return; }
@@ -1021,7 +1042,7 @@
       if (newer) {
         setUpdateBadge(true);
         if (silent) {
-          toast('发现新版本 v' + data.version + '，点 ⋯ 查看');
+          toast('发现新版本 v' + data.version + '，进设置即可更新');
         } else {
           askToUpdate(data);
         }
@@ -1162,6 +1183,13 @@
     syncSeg(el.prioritySeg, composePriority);
   });
 
+  if (el.inputRepeat) {
+    el.inputRepeat.addEventListener('change', function () {
+      setComposeRepeat(el.inputRepeat.value);
+      updateParseHint();
+    });
+  }
+
   el.editPrioritySeg.addEventListener('click', function (e) {
     var b = e.target.closest('.seg-btn');
     if (!b) return;
@@ -1196,6 +1224,7 @@
       return;
     }
     if (e.key === 'Escape' && !el.modalMask.hidden) closeModal();
+    if (e.key === 'Escape' && document.body.classList.contains('is-adding')) closeComposer();
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addTodo(); }
   });
 
@@ -1213,6 +1242,9 @@
     if (!el.settingsPanel) return;
     el.settingsPanel.hidden = true;
     document.body.classList.remove('is-settings');
+    // 下次进来从头看，别停在上次滚到的位置
+    var body = el.settingsPanel.querySelector('.settings-body');
+    if (body) body.scrollTop = 0;
   }
 
   function renderSettings() {
@@ -1243,6 +1275,59 @@
   if (el.btnSettingsMini) el.btnSettingsMini.addEventListener('click', openSettings);
   if (el.setBack) el.setBack.addEventListener('click', closeSettings);
 
+  /* ---------- 设置页：整行都能点开关 ----------
+     开关本体只有 44×25，很多人习惯点行里的文字，点偏一点就没反应，
+     看着就像「开关坏了」。把整行的点击都转给开关。 */
+  document.querySelectorAll('.set-row').forEach(function (row) {
+    var sw = row.querySelector('.switch');
+    if (!sw) return;
+    if (row.classList.contains('as-btn') || row.classList.contains('column')) return;
+    row.classList.add('is-clickable');
+    row.addEventListener('click', function (e) {
+      // 点开关本身时交给它自己的 handler，别重复触发一次
+      if (e.target.closest('.switch')) return;
+      sw.click();
+    });
+  });
+
+  /* ---------- 小卡片的「+」添加抽屉 ----------
+     380 宽的小卡片里添加区常驻太占地，列表被压到只剩两三行。
+     改成底部一颗「+」，点开才展开输入区，选完自动收起。 */
+  function isMiniMode() {
+    return document.body.classList.contains('mode-mini');
+  }
+
+  function openComposer() {
+    if (!isMiniMode()) {
+      if (el.inputText) el.inputText.focus();
+      return;
+    }
+    document.body.classList.add('is-adding');
+    setTimeout(function () {
+      if (el.inputText) el.inputText.focus();
+    }, 80);
+  }
+
+  function closeComposer() {
+    document.body.classList.remove('is-adding');
+  }
+
+  if (el.btnQuickAdd) {
+    el.btnQuickAdd.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (document.body.classList.contains('is-adding')) closeComposer();
+      else openComposer();
+    });
+  }
+
+  // 点抽屉以外的地方就收起来（不设遮罩层，小卡片里遮罩会更压抑）
+  document.addEventListener('mousedown', function (e) {
+    if (!document.body.classList.contains('is-adding')) return;
+    if (el.composer && el.composer.contains(e.target)) return;
+    if (el.btnQuickAdd && el.btnQuickAdd.contains(e.target)) return;
+    closeComposer();
+  });
+
   function commitName() {
     var name = String(el.setName.value || '').trim().slice(0, 16);
     if (!name) { el.setName.value = winState.app_name || ''; return; }
@@ -1268,7 +1353,10 @@
         var st = parseState(raw);
         if (st) applySnap(st.snap); else applySnap(next);
         renderSettings();
-        if (next) callApi('snap_now');
+        // 注意：这里绝对不能立刻 snap_now()。
+        // 一吸附就会触发 on_moved 的防抖判定，再叠上「贴边自动收起」，
+        // 窗口会当场缩成小条、设置页跟着消失 —— 用户只会觉得开关「点不动」。
+        // 吸附是拖动结束时的动作，不该由改设置触发。
         toast(next ? '自动贴边：开' : '自动贴边：关');
       });
     });
@@ -1317,6 +1405,12 @@
         var st = parseState(raw);
         if (st) applyWindowState(st);
         renderSettings();
+        // 写注册表可能被安全软件拦掉，开关会原地不动。
+        // 这种情况必须说清楚，否则用户只会觉得「点了没反应」。
+        if (winState.autostart !== next) {
+          toast('设置失败，可能被安全软件拦截');
+          return;
+        }
         toast(next ? '已开启开机自启动' : '已关闭开机自启动');
       });
     });
@@ -1506,6 +1600,15 @@
 
   function applyWindowState(st) {
     if (!st) return;
+    // 这四个开关的状态也必须同步进来。
+    // 之前只应用 mode/on_top/snap/preset/name/collapsed，
+    // 结果 setAutoCollapse / setCollapse / setCloseAction / setAutoStart
+    // 在点完之后 renderSettings() 读到的还是旧值，开关看上去「点不动」。
+    if (typeof st.collapse_min === 'boolean') winState.collapse_min = st.collapse_min;
+    if (typeof st.auto_collapse === 'boolean') winState.auto_collapse = st.auto_collapse;
+    if (typeof st.close_action === 'string') winState.close_action = st.close_action;
+    if (typeof st.autostart === 'boolean') winState.autostart = st.autostart;
+
     applyMode(st.mode === 'full' ? 'full' : 'mini');
     applyOnTop(st.on_top);
     applySnap(st.snap);
@@ -1520,6 +1623,7 @@
     var isMini = mode === 'mini';
     document.body.classList.toggle('mode-mini', isMini);
     document.body.classList.toggle('mode-full', !isMini);
+    if (!isMini) closeComposer();
     if (el.btnMode) el.btnMode.title = isMini ? '切换到完整视图' : '收成桌面小卡片';
     syncNavActive();
   }
@@ -1630,7 +1734,8 @@
       if (mySeq !== bootSeq) return;
       todos = Array.isArray(data.todos) ? data.todos : [];
       render();
-      el.inputText.focus();
+      // 小卡片里输入框在抽屉中，别抢焦点（否则一启动就弹开抽屉）
+      if (!document.body.classList.contains('mode-mini')) el.inputText.focus();
     });
   }
 
@@ -1677,11 +1782,14 @@
     daysUntil: daysUntil,
     nextDueDate: nextDueDate,
     parseQuickInput: parseQuickInput,
+    setComposeRepeat: setComposeRepeat,
+    getComposeRepeat: function () { return composeRepeat; },
     moveTodo: moveTodo,
     boot: boot,
     start: start,
     applyMode: applyMode,
     applyOnTop: applyOnTop,
+    applyWindowState: applyWindowState,
     syncNavActive: syncNavActive,
     getFilter: function () { return filter; },
     /* 更新检查 */

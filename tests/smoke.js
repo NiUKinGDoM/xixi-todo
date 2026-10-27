@@ -500,6 +500,109 @@
       return A.todos[0].done === true ? true : 'done 未变化';
     });
 
+    /* ---- 设置页：窗口级开关状态同步 ---- */
+    t('applyWindowState 同步窗口级开关', function () {
+      A.applyWindowState({
+        mode: 'mini', on_top: true, snap: false, app_name: 'x',
+        mini_preset: 1, collapsed: false, collapse_edge: '',
+        collapse_min: false, auto_collapse: false,
+        close_action: 'tray', autostart: true
+      });
+      var auto = document.getElementById('setAutoCollapse').classList.contains('is-on');
+      var col = document.getElementById('setCollapse').classList.contains('is-on');
+      var top = document.getElementById('setTop').classList.contains('is-on');
+      var tray = document.querySelector('#setCloseAction button[data-close="tray"]')
+        .classList.contains('is-active');
+      var ast = document.getElementById('setAutoStart').classList.contains('is-on');
+      if (auto) return 'auto_collapse 未同步';
+      if (col) return 'collapse_min 未同步';
+      if (!top) return 'on_top 未同步';
+      if (!tray) return 'close_action 未同步';
+      if (!ast) return 'autostart 未同步';
+      return true;
+    });
+    t('窗口级开关恢复默认态', function () {
+      A.applyWindowState({
+        mode: 'mini', on_top: true, snap: true, app_name: 'x',
+        mini_preset: 1, collapsed: false, collapse_edge: '',
+        collapse_min: true, auto_collapse: true,
+        close_action: 'quit', autostart: false
+      });
+      var auto = document.getElementById('setAutoCollapse').classList.contains('is-on');
+      var col = document.getElementById('setCollapse').classList.contains('is-on');
+      var quit = document.querySelector('#setCloseAction button[data-close="quit"]')
+        .classList.contains('is-active');
+      return (auto && col && quit) ? true : '恢复失败';
+    });
+    t('设置行整行可点', function () {
+      var row = document.getElementById('setAutoCollapse').closest('.set-row');
+      return row.classList.contains('is-clickable') ? true : '行未标记为可点';
+    });
+
+    /* ---- 添加区：重复周期 + 小卡片抽屉 ---- */
+    t('添加区有重复下拉', function () {
+      var s = document.getElementById('inputRepeat');
+      return s && s.options.length === 6 ? true : '缺失或选项数=' + (s && s.options.length);
+    });
+    t('重复下拉默认不重复', function () {
+      return A.getComposeRepeat() === 'none' ? true : '值=' + A.getComposeRepeat();
+    });
+    t('选择重复后添加生成周期任务', function () {
+      A.todos = [];
+      A.render();
+      var s = document.getElementById('inputRepeat');
+      s.value = 'weekly';
+      s.dispatchEvent(new Event('change'));
+      // 标题别带「每周」——会被快速语法吃掉，这里只想验证下拉本身
+      document.getElementById('inputText').value = '复盘会';
+      document.getElementById('addBtn').click();
+      var it = byTitle('复盘会');
+      return it && it.repeat === 'weekly' ? true : 'repeat=' + (it && it.repeat);
+    });
+    t('周期任务渲染重复标签', function () {
+      var it = byTitle('复盘会');
+      var el = it && itemEl(it.id);
+      var tag = el && el.querySelector('.tag-repeat');
+      return tag && /每周/.test(tag.textContent) ? true : 'tag=' + (tag && tag.textContent);
+    });
+    t('添加后重复下拉复位', function () {
+      return A.getComposeRepeat() === 'none' ? true : '值=' + A.getComposeRepeat();
+    });
+    t('文字里的重复语法会同步下拉', function () {
+      var i = document.getElementById('inputText');
+      i.value = '每天喝水 每天';
+      i.dispatchEvent(new Event('input'));
+      return A.getComposeRepeat() === 'daily' ? true : '值=' + A.getComposeRepeat();
+    });
+    t('迷你模式添加区默认收起', function () {
+      A.applyMode('mini');
+      var c = document.querySelector('.composer');
+      return getComputedStyle(c).display === 'none' ? true : 'display=' + getComputedStyle(c).display;
+    });
+    t('小卡片底部有加号', function () {
+      var b = document.getElementById('btnQuickAdd');
+      return b && getComputedStyle(b).display !== 'none' ? true : '加号不可见';
+    });
+    t('点加号展开添加区', function () {
+      document.getElementById('btnQuickAdd').click();
+      var c = document.querySelector('.composer');
+      var shown = getComputedStyle(c).display !== 'none';
+      return document.body.classList.contains('is-adding') && shown
+        ? true : 'class=' + document.body.className + ' display=' + getComputedStyle(c).display;
+    });
+    t('点加号再点一次收起', function () {
+      document.getElementById('btnQuickAdd').click();
+      return !document.body.classList.contains('is-adding') ? true : '仍展开';
+    });
+    t('切回完整模式添加区常驻', function () {
+      A.applyMode('full');
+      var c = document.querySelector('.composer');
+      var ok = !document.body.classList.contains('is-adding') && getComputedStyle(c).display !== 'none';
+      // 后面还有测试依赖「小卡片」形态（缩放手柄只在 mini 下显示），切回去
+      A.applyMode('mini');
+      return ok ? true : 'display=' + getComputedStyle(c).display;
+    });
+
     /* ---- 分组已移除 ---- */
     t('分组接口已不在应用对象上', function () {
       var bad = [];

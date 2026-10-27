@@ -2184,3 +2184,182 @@ body.mode-mini .hero { border: 0; border-radius: 0; }
   box-shadow: none;
 }
 .nav-item:hover { background: #f5f7fb; }
+
+/* ============================================================
+   添加区：重复周期
+   日期和重复是同一类信息（什么时候、多久一次），放在同一排。
+   用原生 select 是为了键盘可达与系统下拉的稳定性，
+   外观完全由外层 label 控制（appearance:none 去掉系统箭头）。
+   ============================================================ */
+.composer-opts { flex-wrap: wrap; row-gap: 8px; }
+
+.repeat-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: #f1f4f9;
+  cursor: pointer;
+  transition: background 0.18s var(--ease);
+}
+.repeat-field:hover { background: #e9eef7; }
+.repeat-field svg { width: 14px; height: 14px; color: var(--ink-3); flex: none; transition: color 0.18s var(--ease); }
+.repeat-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  padding: 0;
+}
+.repeat-field select option { color: #1b2333; background: #fff; }
+.repeat-field.is-set { background: rgba(37, 99, 235, 0.1); }
+.repeat-field.is-set svg,
+.repeat-field.is-set select { color: var(--accent); }
+
+body.mode-mini .composer-opts { row-gap: 7px; }
+body.mode-mini .repeat-field { padding: 3px 8px; border-radius: 8px; gap: 5px; }
+body.mode-mini .repeat-field svg { width: 13px; height: 13px; }
+body.mode-mini .repeat-field select { font-size: 11.5px; }
+
+/* ============================================================
+   小卡片：添加区收进底部抽屉
+   小卡片只有 380 宽，添加区常驻会吃掉三分之一高度，
+   列表反而没地方了。改成底部一个「+」，点开才展开输入区。
+   ============================================================ */
+
+.mini-add {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.16s var(--ease), transform 0.14s var(--ease);
+}
+.mini-add svg { width: 14px; height: 14px; }
+.mini-add:hover { background: #1d4ed8; }
+.mini-add:active { transform: scale(0.9); }
+
+/* 输入区默认不存在于小卡片里 */
+body.mode-mini .composer { display: none; }
+
+/* 点「+」后从底部浮出，盖住进度条，避免挤压列表 */
+body.mode-mini.is-adding .composer {
+  display: block;
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 8px;
+  z-index: 32;
+  margin: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: 0 -14px 34px -20px rgba(16, 24, 40, 0.45), 0 2px 10px -6px rgba(16, 24, 40, 0.2);
+  animation: add-sheet 0.2s var(--ease) both;
+}
+body.mode-mini.is-adding .composer-row { gap: 8px; }
+body.mode-mini.is-adding .composer-icon { display: none; }
+body.mode-mini.is-adding .composer-add { padding: 7px 16px; font-size: 12.5px; }
+body.mode-mini.is-adding .composer-opts {
+  margin-top: 9px;
+  padding-top: 9px;
+  gap: 7px;
+}
+body.mode-mini.is-adding .parse-hint { display: none; }
+
+@keyframes add-sheet {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 抽屉打开时列表让出底部，最后一条不被挡住 */
+body.mode-mini.is-adding .list-wrap { padding-bottom: 118px; }
+
+/* 抽屉展开时底部进度让位，别和输入区挤在一起 */
+body.mode-mini .mini-foot { transition: opacity 0.16s var(--ease); }
+body.mode-mini.is-adding .mini-foot { opacity: 0; pointer-events: none; }
+
+/* ============================================================
+   设置页：整行可点 + 小卡片紧凑排布
+   小卡片只有 521px 可视高度，原来的行高把「窗口置顶」挤到了屏幕外，
+   用户点的时候鼠标直接落到桌面上。这里把纵向间距收紧，
+   让四个窗口开关都能进首屏。
+   ============================================================ */
+.set-row.is-clickable { cursor: pointer; }
+.set-row.is-clickable:hover { background: #f7f9fc; }
+.set-row.is-clickable:active { background: #f1f4f9; }
+body.mode-mini .set-row.is-clickable:hover { background: #f7f9fc; }
+
+body.mode-mini .settings-body {
+  gap: 13px;
+  padding: 0 12px 26px;
+}
+body.mode-mini .set-group-label {
+  margin: 0 0 6px 2px;
+  font-size: 11.5px;
+}
+body.mode-mini .set-identity {
+  padding: 10px 11px;
+  gap: 9px;
+}
+body.mode-mini .set-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+body.mode-mini .set-avatar svg { width: 18px; height: 18px; }
+body.mode-mini .set-identity-body { gap: 4px; }
+body.mode-mini .set-inline { gap: 7px; }
+body.mode-mini .set-input { padding: 6px 9px; font-size: 12.5px; }
+body.mode-mini .set-chip { padding: 6px 12px; font-size: 12px; }
+
+body.mode-mini .set-row {
+  min-height: 46px;
+  padding: 8px 11px;
+  gap: 9px;
+}
+body.mode-mini .set-row.column {
+  padding-top: 9px;
+  padding-bottom: 10px;
+  gap: 7px;
+}
+body.mode-mini .set-ico {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+body.mode-mini .set-ico svg { width: 15px; height: 15px; }
+body.mode-mini .set-text b { font-size: 12.5px; }
+body.mode-mini .set-text small { font-size: 10.5px; }
+body.mode-mini .set-seg button { padding: 6px 0; font-size: 11.5px; }
+
+/* 再收紧一档：让小卡片里「开机自启动」也能进首屏 */
+body.mode-mini .settings-head-inner { height: 48px; }
+body.mode-mini .set-identity { padding: 8px 11px; }
+body.mode-mini .set-identity-label { display: none; }
+body.mode-mini .settings-body { gap: 11px; }
+body.mode-mini .set-group-label { margin-bottom: 5px; font-size: 11px; }
+body.mode-mini .set-row { min-height: 44px; padding: 7px 11px; }
+
+/* 底部留一道极淡的渐隐，暗示下面还有内容可滚 */
+body.mode-mini .settings::after {
+  display: block;
+  height: 18px;
+  background: linear-gradient(to top, var(--canvas) 0%, rgba(244, 246, 250, 0) 100%);
+}

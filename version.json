@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.5.0",
   "date": "2026-10-27",
-  "notes": "改为安装型应用：只发安装包，不再提供免安装 exe；贴边松手直接收进边缘；关闭按钮可选退出或收进托盘",
+  "notes": "修复置顶卡死与多处按钮点不动；拖动排序不再带着整个窗口跑；小卡片改为加号唤起添加抽屉；添加待办时可直接选重复周期",
   "downloads": {
     "setup": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
     "ghproxy": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",

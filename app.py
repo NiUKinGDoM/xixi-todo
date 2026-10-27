@@ -22,7 +22,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -111,7 +111,9 @@ COLLAPSE_THIN, COLLAPSE_LONG = 20, 104
 # 开机自启动：写 HKCU 的 Run 键，和安装包共用同一个值名，
 # 这样「安装时勾选」和「设置里打开」不会互相打架。
 AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-AUTOSTART_NAME = "XiXiTodo"
+# 值名允许被环境变量覆盖：自动化测试要用真实注册表路径验证开关，
+# 但绝不能碰用户真正的启动项，所以挂一个测试专用名字。
+AUTOSTART_NAME = os.environ.get("XIXI_TODO_REG_NAME") or "XiXiTodo"
 
 
 def _log(msg: str) -> None:
@@ -500,6 +502,119 @@ def shape_window(win, radius: int = 22) -> str:
     return "region" if apply_round_region(win, radius) else "none"
 
 
+# --------------------------------------------------------------------------
+# 纯 Win32 窗口控制
+# --------------------------------------------------------------------------
+# 教训（血泪）：pywebview 的 Window.on_top / set_title / minimize / destroy
+# 最终都会碰 WinForms 对象。而 js_api 回调运行在一个**新建的工作线程**上，
+# 此时 UI 线程正卡在 threading.Thread.start() 里等新线程就绪，无法处理
+# 跨线程 Invoke / 窗口消息 —— 两边互等，整个界面永久卡死。
+#
+# 实测调用栈（点一下置顶就死）：
+#   js_api 线程 → window.on_top setter → winforms.set_on_top → i.TopMost
+#   主线程     → js_bridge_call → Thread.start() → _started.wait()
+#
+# 所以：凡是 js_api 里要动的窗口属性，一律走 user32，不碰 pywebview 的
+# Python 属性，也不碰 .NET。
+# --------------------------------------------------------------------------
+
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+SW_MINIMIZE = 6
+SW_SHOW = 5
+SW_HIDE = 0
+SW_RESTORE = 9
+WM_CLOSE = 0x0010
+
+# 注意：绝不能在 ctypes.windll.user32 上设 argtypes。
+# pywebview 自己的 winforms 后端也用同一个 DLL 对象调 SetWindowPos，
+# 它习惯传 None 表示「不改这一项」；一旦被我们钉死成 c_int，它当场抛
+# ArgumentError，窗口 move / resize 全线失效。
+# 所以这里开一个独立的 WinDLL 实例，只给本文件这几个函数用。
+_u32 = ctypes.WinDLL("user32", use_last_error=True)
+_u32.SetWindowPos.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint,
+]
+_u32.SetWindowPos.restype = ctypes.c_bool
+_u32.SetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+_u32.SetWindowTextW.restype = ctypes.c_bool
+_u32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_u32.ShowWindow.restype = ctypes.c_bool
+_u32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+_u32.PostMessageW.restype = ctypes.c_bool
+_u32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+
+
+def win_set_topmost(hwnd: int, on_top: bool) -> bool:
+    """置顶 / 取消置顶（不改 Z 序以外的东西）。"""
+    if not hwnd:
+        return False
+    try:
+        after = HWND_TOPMOST if on_top else HWND_NOTOPMOST
+        ok = _u32.SetWindowPos(
+            ctypes.c_void_p(hwnd), ctypes.c_void_p(after),
+            0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+        _log(f"topmost -> {on_top} ok={bool(ok)}")
+        return bool(ok)
+    except Exception as exc:
+        _log(f"set topmost failed: {exc}")
+        return False
+
+
+def win_set_title(hwnd: int, title: str) -> bool:
+    if not hwnd:
+        return False
+    try:
+        return bool(_u32.SetWindowTextW(ctypes.c_void_p(hwnd), title))
+    except Exception as exc:
+        _log(f"set title failed: {exc}")
+        return False
+
+
+def win_minimize(hwnd: int) -> bool:
+    if not hwnd:
+        return False
+    try:
+        return bool(_u32.ShowWindow(ctypes.c_void_p(hwnd), SW_MINIMIZE))
+    except Exception as exc:
+        _log(f"minimize failed: {exc}")
+        return False
+
+
+def win_show(hwnd: int, restore: bool = True) -> bool:
+    """从托盘 / 最小化恢复。"""
+    if not hwnd:
+        return False
+    try:
+        _u32.ShowWindow(ctypes.c_void_p(hwnd), SW_RESTORE if restore else SW_SHOW)
+        _u32.SetForegroundWindow(ctypes.c_void_p(hwnd))
+        return True
+    except Exception as exc:
+        _log(f"show failed: {exc}")
+        return False
+
+
+def win_request_close(hwnd: int) -> bool:
+    """异步请求关窗。
+
+    用 PostMessage 而不是 win.destroy()：后者是同步 Invoke，
+    在 js_api 线程里会把界面顶死；PostMessage 只是投递消息，立即返回。
+    """
+    if not hwnd:
+        return False
+    try:
+        return bool(_u32.PostMessageW(ctypes.c_void_p(hwnd), WM_CLOSE, None, None))
+    except Exception as exc:
+        _log(f"request close failed: {exc}")
+        return False
+
+
 def snap_window_to_edge(win, enabled: bool = True) -> tuple[int, int] | None:
     """靠近屏幕边缘时自动吸附。返回吸附后的坐标，未吸附返回 None。"""
     if not enabled:
@@ -736,11 +851,8 @@ class Api:
             return self.get_window_state()
         self.state["app_name"] = name
         win = self._win()
-        try:
-            if win is not None:
-                win.set_title(name)
-        except Exception as exc:
-            _log(f"set_title failed: {exc}")
+        # SetWindowTextW 是纯 user32，不会引发跨线程 Invoke 死锁
+        win_set_title(_hwnd_of(win) if win is not None else 0, name)
         save_state(self.state)
         return self.get_window_state()
 
@@ -796,6 +908,9 @@ class Api:
         win = self._win()
         if win is None or self.state.get("collapsed"):
             return self.get_window_state()
+        # 吸附本身会改坐标 → 触发 moved → 再排一次自动贴边判定。
+        # 吸完先静默一小会儿，避免「吸附 → 判定 → 自动收起」连锁。
+        self._mute_snap(0.5)
         result = snap_window_to_edge(win, bool(self.state.get("snap", True)))
         if result:
             _log(f"snapped to {result}")
@@ -958,11 +1073,8 @@ class Api:
         win = self._win()
         new_val = not bool(self.state.get("on_top", True))
         self.state["on_top"] = new_val
-        try:
-            if win is not None:
-                win.on_top = new_val
-        except Exception as exc:
-            _log(f"on_top failed: {exc}")
+        # 绝不能写 win.on_top：js_api 线程碰 WinForms 属性会和 UI 线程互等死锁
+        win_set_topmost(_hwnd_of(win) if win is not None else 0, new_val)
         save_state(self.state)
         return self.get_window_state()
 
@@ -981,10 +1093,8 @@ class Api:
             edge = self._nearest_edge(win, limit=None)
             if edge:
                 return self.collapse_window(edge)
-        try:
-            win.minimize()
-        except Exception as exc:
-            _log(f"minimize failed: {exc}")
+        # win.minimize() 内部是同步 Invoke，js_api 线程里会死锁，改走 user32
+        win_minimize(_hwnd_of(win))
         return ""
 
     # ---------- 收进屏幕边缘 ----------
@@ -1120,9 +1230,7 @@ class Api:
         hwnd = _hwnd_of(win) if win is not None else 0
         if not hwnd:
             return
-        user32.ShowWindow(hwnd, SW_SHOW)
-        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-        user32.SetForegroundWindow(hwnd)
+        win_show(hwnd)
 
     def _ensure_tray(self) -> bool:
         if self._tray is not None:
@@ -1150,7 +1258,7 @@ class Api:
         hwnd = _hwnd_of(win) if win is not None else 0
         if not hwnd:
             return False
-        user32.ShowWindow(hwnd, SW_HIDE)
+        _u32.ShowWindow(ctypes.c_void_p(hwnd), SW_HIDE)
         _log("hide to tray")
         return True
 
@@ -1165,6 +1273,9 @@ class Api:
                 _log(f"tray stop failed: {exc}")
         win = self._win()
         if win is not None:
+            # 先投递 WM_CLOSE 让 pywebview 走正常关闭流程（会落盘、退出消息循环）
+            if win_request_close(_hwnd_of(win)):
+                return
             try:
                 win.destroy()
             except Exception as exc:
@@ -1367,7 +1478,12 @@ def main() -> None:
         # 无边框 + 透明：窗口本身不画背景，圆角与阴影全部由页面绘制，
         # 这样迷你卡片才能真正像浮在桌面上的一块玻璃。
         frameless=True,
-        easy_drag=True,
+        # easy_drag 绝对不能再开：它会往 window 上挂一个全局 mousedown，
+        # 窗口里任何位置按下鼠标都开始拖窗口。后果是——
+        # 点按钮时手抖两像素，窗口先被拖走，click 目标丢失，按钮「点不动」；
+        # 拖拽排序、框选文字、拖右下角缩放也全被抢。
+        # 标题栏拖动由 .pywebview-drag-region 单独负责，不依赖 easy_drag。
+        easy_drag=False,
         # transparent 在 WebView2 上并不真正生效（窗口底色仍是不透明浅灰，
         # 会露出一圈白边），所以关掉它。
         transparent=False,

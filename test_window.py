@@ -43,6 +43,14 @@ from app import (  # noqa: E402
 
 RESULTS: list[str] = []
 
+# 置顶 / 最小化现在走 user32，不碰 pywebview 的 Window 属性
+# （跨线程 Invoke 会死锁）。测试用假 hwnd 记录这两个出口的调用。
+TOPMOST_CALLS: list[bool] = []
+MINIMIZE_CALLS: list[int] = []
+appmod.win_set_topmost = lambda hwnd, on: (TOPMOST_CALLS.append(bool(on)), True)[1]
+appmod.win_minimize = lambda hwnd: (MINIMIZE_CALLS.append(int(hwnd)), True)[1]
+appmod.win_set_title = lambda hwnd, title: True
+
 
 def check(name: str, ok: bool, detail: str = "") -> None:
     RESULTS.append(("OK   " if ok else "FAIL ") + name + (f" :: {detail}" if detail else ""))
@@ -175,10 +183,12 @@ def main() -> int:
 
     # ---------- 置顶开关 ----------
     win.calls.clear()
+    TOPMOST_CALLS.clear()
     before = state["on_top"]
     api.toggle_on_top()
     check("置顶状态被翻转", state["on_top"] is not before, f"{before} -> {state['on_top']}")
-    check("窗口 on_top 已应用", ("on_top", state["on_top"]) in win.calls, str(win.calls))
+    check("窗口置顶已下发", TOPMOST_CALLS and TOPMOST_CALLS[-1] is state["on_top"],
+          str(TOPMOST_CALLS))
     api.toggle_on_top()
     check("再次切换回到原值", state["on_top"] is before, f"on_top={state['on_top']}")
 
@@ -355,8 +365,11 @@ def main() -> int:
     api_c.state["collapse_min"] = False
     fw2 = _FakeWin()
     api_c.window_holder = {"window": fw2}
+    MINIMIZE_CALLS.clear()
     out2 = api_c.minimize_window()
-    check("关掉收边后走系统最小化", out2 == "" and fw2.minimized == 1, str(out2))
+    check("关掉收边后走系统最小化",
+          out2 == "" and len(MINIMIZE_CALLS) == 1 and fw2.minimized == 0,
+          f"{out2} calls={MINIMIZE_CALLS}")
 
     # 开关本身要落盘
     api_c.set_collapse_min("1")

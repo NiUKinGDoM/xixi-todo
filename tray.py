@@ -19,6 +19,17 @@ user32 = ctypes.windll.user32
 shell32 = ctypes.windll.shell32
 kernel32 = ctypes.windll.kernel32
 
+# 独立的 user32 实例：下面要给 DefWindowProcW 定签名，
+# 直接改 ctypes.windll.user32 会波及 pywebview 自己的调用（它的
+# SetWindowPos 习惯传 None），一设 argtypes 就当场 ArgumentError。
+# 默认签名下 LPARAM 被推断成 c_int，64 位指针一进来就 OverflowError，
+# 结果托盘菜单的回调直接失效。
+_u32 = ctypes.WinDLL("user32", use_last_error=True)
+_u32.DefWindowProcW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+_u32.DefWindowProcW.restype = ctypes.c_ssize_t
+_u32.CallWindowProcW.argtypes = [ctypes.c_void_p, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+_u32.CallWindowProcW.restype = ctypes.c_ssize_t
+
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
 WM_COMMAND = 0x0111
@@ -195,7 +206,7 @@ class TrayIcon:
             return 0
         if msg == WM_DESTROY:
             return 0
-        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+        return _u32.DefWindowProcW(hwnd, msg, wparam, lparam)
 
     def _menu(self) -> None:
         menu = user32.CreatePopupMenu()

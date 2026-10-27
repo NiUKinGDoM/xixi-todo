@@ -324,6 +324,17 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
               </span>
             </label>
+            <label class="repeat-field" id="repeatField" title="重复周期">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 10-2.6 5.9"/><path d="M20 5v6.5h-6.5"/></svg>
+              <select id="inputRepeat" aria-label="重复周期">
+                <option value="none">不重复</option>
+                <option value="daily">每天</option>
+                <option value="weekday">工作日</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+                <option value="yearly">每年</option>
+              </select>
+            </label>
             <span class="parse-hint" id="parseHint" hidden></span>
           </div>
         </div>
@@ -348,6 +359,9 @@
         <div class="mini-foot">
           <div class="mini-track"><div class="mini-fill" id="miniFill"></div></div>
           <span class="mini-stat" id="miniStat">0 / 0</span>
+          <button class="mini-add" id="btnQuickAdd" title="添加待办" aria-label="添加待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+          </button>
           <button class="mini-gear" id="btnSettingsMini" title="设置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3.1"/>

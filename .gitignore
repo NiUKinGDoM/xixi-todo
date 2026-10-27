@@ -28,6 +28,7 @@ tests/app.js
 tests/*.png
 tests/*.bmp
 tests/*.log
+tests/gui_*_result.json
 tests/*.txt
 tests/*.tmp
 
