@@ -319,6 +319,83 @@ def main() -> int:
           str(api_c.state["mini"]))
     api_c.state["collapsed"] = False
 
+    # ---------- 最小化是否收边 ----------
+
+    class _FakeWin:
+        def __init__(self):
+            self.sizes = []
+            self.moves = []
+            self.minimized = 0
+
+        def resize(self, w, h):
+            self.sizes.append((w, h))
+
+        def move(self, x, y):
+            self.moves.append((x, y))
+
+        def minimize(self):
+            self.minimized += 1
+            return True
+
+    # 窗口在屏幕中间（离四边都很远）也要收边：之前要求贴边才收，点完没反应
+    fake_geom((700, 300, 380, 560))
+    fw = _FakeWin()
+    holder = {"window": fw}
+    api_c.window_holder = holder
+    api_c.state["collapsed"] = False
+    api_c.state["collapse_min"] = True
+    out = json.loads(api_c.minimize_window())
+    check("中间位置最小化也收边", out.get("collapsed") is True, str(out)[:80])
+    check("收边后尺寸变薄条", fw.sizes and fw.sizes[-1] in ((20, 104), (104, 20)),
+          str(fw.sizes))
+    check("收边时不调系统最小化", fw.minimized == 0, f"minimized={fw.minimized}")
+
+    # 关掉开关 → 退回系统最小化，返回空
+    api_c.state["collapsed"] = False
+    api_c.state["collapse_min"] = False
+    fw2 = _FakeWin()
+    api_c.window_holder = {"window": fw2}
+    out2 = api_c.minimize_window()
+    check("关掉收边后走系统最小化", out2 == "" and fw2.minimized == 1, str(out2))
+
+    # 开关本身要落盘
+    api_c.set_collapse_min("1")
+    check("收边开关写入状态", api_c.state["collapse_min"] is True)
+    saved = json.loads(STATE_FILE.read_text("utf-8"))
+    check("收边开关已落盘", saved.get("collapse_min") is True, str(saved)[:80])
+
+    # 自启动：测试目录下不写真实注册表，只回读
+    before = appmod.is_autostart_enabled()
+    got = json.loads(api_c.set_autostart("1"))
+    check("自启动接口不抛异常", isinstance(got.get("autostart"), bool), str(got)[:80])
+    check("测试模式不动注册表", appmod.is_autostart_enabled() == before)
+
+    # ---------- 展开：按当前模式还原 ----------
+
+    fake_geom((243, 143, 1080, 720))
+    fw3 = _FakeWin()
+    api_c.window_holder = {"window": fw3}
+    api_c.state.update({
+        "mode": "full", "collapsed": False, "collapse_edge": "",
+        "collapse_min": True,
+        "full": {"x": 243, "y": 143, "w": 1080, "h": 720},
+    })
+    api_c.collapse_window("top")
+    check("完整视图收起后记住原尺寸", api_c.state["full"]["w"] == 1080,
+          str(api_c.state["full"]))
+    api_c.state["collapsed"] = True
+    out3 = json.loads(api_c.expand_window())
+    check("展开后回到完整尺寸", out3.get("collapsed") is False and fw3.sizes[-1] == (1080, 720),
+          str(fw3.sizes))
+    check("展开后回到原位置", fw3.moves and fw3.moves[-1] == (243, 143), str(fw3.moves[-1:]))
+    check("展开后短暂不吸附", api_c._suppress_snap_until > appmod.time.monotonic())
+
+    # 拖动期间抑制吸附
+    api_c.set_dragging("1")
+    check("拖动标记可置位", api_c._dragging is True)
+    api_c.set_dragging("")
+    check("拖动标记可清除", api_c._dragging is False)
+
     appmod._window_rect = orig_rect
     appmod._hwnd_of = orig_hwnd
     appmod.webview.screens = orig_screens

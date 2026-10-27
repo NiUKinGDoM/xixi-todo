@@ -55,12 +55,6 @@
     <span class="minibar-count" id="miniCount">0</span>
   </div>
   <div class="minibar-actions">
-    <button class="mb-btn" id="btnMenu" title="设置">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3.1"/>
-        <path d="M12 3.2l1.5 2.2 2.6-.6.6 2.6 2.2 1.5-1.2 2.4 1.2 2.4-2.2 1.5-.6 2.6-2.6-.6L12 20.8l-1.5-2.2-2.6.6-.6-2.6-2.2-1.5 1.2-2.4-1.2-2.4 2.2-1.5.6-2.6 2.6.6z"/>
-      </svg>
-    </button>
     <button class="mb-btn" id="btnPin" title="取消置顶">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9.5 3.5h5"/>
@@ -89,60 +83,117 @@
 <!-- ===== 设置页（覆盖整张卡片） ===== -->
 <section class="settings" id="settingsPanel" hidden>
   <header class="settings-head">
-    <button class="set-back" id="setBack" title="返回">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
-    </button>
-    <h2>设置</h2>
+    <div class="settings-head-inner">
+      <button class="set-back" id="setBack" title="返回" aria-label="返回">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+      </button>
+      <h2>设置</h2>
+      <span class="set-ver" id="appVersion">v—</span>
+    </div>
   </header>
 
   <div class="settings-body">
-    <div class="set-block">
-      <p class="set-label">应用名称</p>
-      <div class="set-inline">
-        <input class="set-input" id="setName" type="text" maxlength="16" autocomplete="off" spellcheck="false">
-        <button class="set-btn" id="setNameSave">保存</button>
-      </div>
-    </div>
 
-    <div class="set-block">
-      <p class="set-label">窗口</p>
-      <div class="set-row">
-        <span class="set-key">自动贴边</span>
-        <button class="switch" id="setSnap" role="switch" aria-checked="true"><i></i></button>
+    <!-- 身份块：整页唯一的视觉焦点 -->
+    <div class="set-identity">
+      <div class="set-avatar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h2M4 12h2M4 17h2"/>
+          <rect x="8.6" y="4.6" width="11.4" height="14.8" rx="3.4"/>
+          <path d="M11.9 11.6l2 2 3.3-3.4"/>
+        </svg>
       </div>
-      <div class="set-row">
-        <span class="set-key">窗口置顶</span>
-        <button class="switch" id="setTop" role="switch" aria-checked="true"><i></i></button>
-      </div>
-      <div class="set-row column">
-        <span class="set-key">小卡片尺寸</span>
-        <div class="set-seg" id="setSize">
-          <button data-preset="0">紧凑</button>
-          <button data-preset="1">标准</button>
-          <button data-preset="2">宽大</button>
+      <div class="set-identity-body">
+        <span class="set-identity-label">名称</span>
+        <div class="set-inline">
+          <input class="set-input" id="setName" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="给它起个名字">
+          <button class="set-chip" id="setNameSave">保存</button>
         </div>
       </div>
     </div>
 
-    <div class="set-block">
-      <p class="set-label">更新</p>
-      <div class="set-row">
-        <span class="set-key">当前版本</span>
-        <span class="set-val" id="appVersion">v—</span>
+    <section class="set-group">
+      <p class="set-group-label">外观</p>
+      <div class="set-list">
+        <div class="set-row column">
+          <div class="set-row-head">
+            <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4H4v5.5M14.5 4H20v5.5M9.5 20H4v-5.5M14.5 20H20v-5.5"/></svg></span>
+            <span class="set-text"><b>小卡片尺寸</b><small>拖右下角还能自由缩放</small></span>
+          </div>
+          <div class="set-seg" id="setSize">
+            <button data-preset="0">紧凑</button>
+            <button data-preset="1">标准</button>
+            <button data-preset="2">宽大</button>
+          </div>
+        </div>
       </div>
-      <button class="set-btn wide" id="menuUpdate"><span id="updateLabel">检查更新</span></button>
-    </div>
+    </section>
 
-    <div class="set-block">
-      <p class="set-label">数据</p>
-      <div class="set-row">
-        <span class="set-key">待办总数</span>
-        <span class="set-val" id="setCount">0</span>
+    <section class="set-group">
+      <p class="set-group-label">窗口</p>
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></span>
+          <span class="set-text"><b>自动贴边</b><small>拖到屏幕边缘松手就吸附</small></span>
+          <button class="switch" id="setSnap" role="switch" aria-checked="true"><i></i></button>
+        </div>
+        <div class="set-row">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.8v14.4"/><path d="M17 8.4l-3.9 3.6 3.9 3.6"/></svg></span>
+          <span class="set-text"><b>最小化收进边缘</b><small>缩成贴边小条，点一下还原</small></span>
+          <button class="switch" id="setCollapse" role="switch" aria-checked="true"><i></i></button>
+        </div>
+        <div class="set-row">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h5M10.6 3.5v5.3L7.9 11.2v1.6h8.2v-1.6l-2.7-2.4V3.5M12 12.8v7.7"/></svg></span>
+          <span class="set-text"><b>窗口置顶</b><small>始终浮在其他窗口之上</small></span>
+          <button class="switch" id="setTop" role="switch" aria-checked="true"><i></i></button>
+        </div>
       </div>
-      <button class="set-btn wide" id="menuBackup">导出备份</button>
-      <button class="set-btn wide" id="menuRestore">导入恢复</button>
-      <button class="set-btn wide danger" id="menuClearDone">清除已完成</button>
-    </div>
+    </section>
+
+    <section class="set-group">
+      <p class="set-group-label">启动</p>
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6v7.6"/><path d="M7.7 6.3a7.1 7.1 0 108.6 0"/></svg></span>
+          <span class="set-text"><b>开机自启动</b><small>开机后自动打开小卡片</small></span>
+          <button class="switch" id="setAutoStart" role="switch" aria-checked="false"><i></i></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <p class="set-group-label">更新</p>
+      <div class="set-list">
+        <button class="set-row as-btn" id="menuUpdate">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 10-2.6 5.9"/><path d="M20 5v6.5h-6.5"/></svg></span>
+          <span class="set-text"><b id="updateLabel">检查更新</b><small>有新版本会提示下载</small></span>
+          <svg class="set-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <p class="set-group-label">数据</p>
+      <div class="set-list">
+        <button class="set-row as-btn" id="menuBackup">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4.5 15v3.5A1.5 1.5 0 006 20h12a1.5 1.5 0 001.5-1.5V15"/></svg></span>
+          <span class="set-text"><b>导出备份</b><small>存成 JSON 文件</small></span>
+          <svg class="set-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
+        </button>
+        <button class="set-row as-btn" id="menuRestore">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4.5 15v3.5A1.5 1.5 0 006 20h12a1.5 1.5 0 001.5-1.5V15"/></svg></span>
+          <span class="set-text"><b>导入恢复</b><small>从备份文件还原</small></span>
+          <svg class="set-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
+        </button>
+        <button class="set-row as-btn is-danger" id="menuClearDone">
+          <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.4A1.4 1.4 0 0110.9 4h2.2a1.4 1.4 0 011.4 1.4V7M6.5 7l.8 12a1.6 1.6 0 001.6 1.5h6.2a1.6 1.6 0 001.6-1.5L17.5 7"/></svg></span>
+          <span class="set-text"><b>清除已完成</b><small>当前共 <span id="setCount">0</span> 条待办</small></span>
+          <svg class="set-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <button class="set-quit" id="menuQuit">退出应用</button>
   </div>
 </section>
 
@@ -206,6 +257,13 @@
       <button class="ghost-btn" id="clearDoneBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.4A1.4 1.4 0 0110.9 4h2.2a1.4 1.4 0 011.4 1.4V7M6.5 7l.8 12a1.6 1.6 0 001.6 1.5h6.2a1.6 1.6 0 001.6-1.5L17.5 7"/></svg>
         清除已完成
+      </button>
+      <button class="ghost-btn set-entry" id="btnSettings" title="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3.1"/>
+          <path d="M12 3.2l1.5 2.2 2.6-.6.6 2.6 2.2 1.5-1.2 2.4 1.2 2.4-2.2 1.5-.6 2.6-2.6-.6L12 20.8l-1.5-2.2-2.6.6-.6-2.6-2.2-1.5 1.2-2.4-1.2-2.4 2.2-1.5.6-2.6 2.6.6z"/>
+        </svg>
+        设置
       </button>
     </div>
   </aside>
@@ -275,6 +333,12 @@
         <div class="mini-foot">
           <div class="mini-track"><div class="mini-fill" id="miniFill"></div></div>
           <span class="mini-stat" id="miniStat">0 / 0</span>
+          <button class="mini-gear" id="btnSettingsMini" title="设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3.1"/>
+              <path d="M12 3.2l1.5 2.2 2.6-.6.6 2.6 2.2 1.5-1.2 2.4 1.2 2.4-2.2 1.5-.6 2.6-2.6-.6L12 20.8l-1.5-2.2-2.6.6-.6-2.6-2.2-1.5 1.2-2.4-1.2-2.4 2.2-1.5.6-2.6 2.6.6z"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>

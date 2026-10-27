@@ -44,3 +44,4 @@ desktop.ini
 # 本地临时目录
 .tb/
 tests/remote/
+installer/setup.iss

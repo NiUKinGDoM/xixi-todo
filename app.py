@@ -20,7 +20,7 @@ import webview
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -106,6 +106,11 @@ EDGE_SNAP_PX = 30
 # 收进屏幕边缘时的小条尺寸（薄边 × 长边）
 COLLAPSE_THIN, COLLAPSE_LONG = 20, 104
 
+# 开机自启动：写 HKCU 的 Run 键，和安装包共用同一个值名，
+# 这样「安装时勾选」和「设置里打开」不会互相打架。
+AUTOSTART_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+AUTOSTART_NAME = "XiXiTodo"
+
 
 def _log(msg: str) -> None:
     try:
@@ -173,6 +178,7 @@ DEFAULT_STATE = {
     "mini_preset": 1,
     "collapsed": False,
     "collapse_edge": "",
+    "collapse_min": True,
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -187,9 +193,15 @@ def load_state() -> dict:
         "mini_preset": DEFAULT_STATE["mini_preset"],
         "collapsed": False,
         "collapse_edge": "",
+        "collapse_min": True,
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
+    # 收起是临时状态：上次退出时如果是贴边小条（甚至被强杀），
+    # 这次冷启动必须正常打开，不能一开机就是一条 20px 的缝。
+    state["collapsed"] = False
+    state["collapse_edge"] = ""
+
     try:
         if STATE_FILE.exists():
             raw = json.loads(STATE_FILE.read_text("utf-8"))
@@ -198,6 +210,8 @@ def load_state() -> dict:
                     state["mode"] = raw["mode"]
                 if isinstance(raw.get("on_top"), bool):
                     state["on_top"] = raw["on_top"]
+                if isinstance(raw.get("collapse_min"), bool):
+                    state["collapse_min"] = raw["collapse_min"]
                 if isinstance(raw.get("snap"), bool):
                     state["snap"] = raw["snap"]
                 if isinstance(raw.get("app_name"), str) and raw["app_name"].strip():
@@ -224,6 +238,55 @@ def save_state(state: dict) -> None:
         tmp.replace(STATE_FILE)
     except Exception as exc:
         _log(f"save state failed: {exc}")
+
+
+def _launch_command() -> str:
+    """写进注册表的启动命令。打包后就是 exe 本身；开发态用 pythonw 跑 app.py。"""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pyw = Path(sys.executable).with_name("pythonw.exe")
+    runner = pyw if pyw.exists() else Path(sys.executable)
+    entry = Path(__file__).resolve().parent / "app.py"
+    return f'"{runner}" "{entry}"'
+
+
+def is_autostart_enabled() -> bool:
+    """读注册表判断是否已设置开机自启动。"""
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY) as key:
+            value, _type = winreg.QueryValueEx(key, AUTOSTART_NAME)
+        return bool(str(value).strip())
+    except Exception:
+        return False
+
+
+def write_autostart(enabled: bool) -> bool:
+    """开启 / 关闭开机自启动。返回写入后的真实状态。"""
+    # 测试用临时数据目录时不要动真实注册表
+    if os.environ.get("XIXI_TODO_DATA_DIR") and not os.environ.get("XIXI_TODO_ALLOW_REG"):
+        return is_autostart_enabled()
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, AUTOSTART_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            if enabled:
+                winreg.SetValueEx(
+                    key, AUTOSTART_NAME, 0, winreg.REG_SZ, _launch_command()
+                )
+            else:
+                try:
+                    winreg.DeleteValue(key, AUTOSTART_NAME)
+                except FileNotFoundError:
+                    pass
+        _log(f"autostart -> {bool(enabled)}")
+        return bool(enabled)
+    except Exception as exc:
+        _log(f"set autostart failed: {exc}")
+        return is_autostart_enabled()
 
 
 def clamp_to_screen(x: int, y: int, w: int, h: int, margin: int = 8) -> tuple[int, int]:
@@ -328,6 +391,34 @@ def _hwnd_of(win) -> int:
         return _find_hwnd_by_title(win.title)
     except Exception:
         return 0
+
+
+def _screen_for(x: int, y: int, w: int, h: int) -> tuple[int, int, int, int]:
+    """窗口落在哪块屏幕上（返回该屏幕的 x, y, width, height）。
+
+    pywebview.screens[0] 永远是主屏，副屏上贴边会算错、收起来还会跳回主屏。
+    """
+    best = None
+    best_area = -1
+    try:
+        for scr in webview.screens:
+            sx, sy = int(scr.x), int(scr.y)
+            sw, sh = int(scr.width), int(scr.height)
+            ox = max(0, min(x + w, sx + sw) - max(x, sx))
+            oy = max(0, min(y + h, sy + sh) - max(y, sy))
+            area = ox * oy
+            if area > best_area:
+                best_area = area
+                best = (sx, sy, sw, sh)
+    except Exception as exc:
+        _log(f"screen lookup failed: {exc}")
+    if best is None:
+        try:
+            scr = webview.screens[0]
+            best = (int(scr.x), int(scr.y), int(scr.width), int(scr.height))
+        except Exception:
+            best = (0, 0, 1920, 1080)
+    return best
 
 
 def _window_rect(hwnd: int) -> tuple[int, int, int, int]:
@@ -476,6 +567,11 @@ class Api:
         self.store = store
         self.window_holder = window_holder
         self.state = state if state is not None else load_state()
+        # 前端拖动期间为 True，用来抑制自动贴边
+        self._dragging = False
+        # 程序化改几何（展开/换尺寸/切模式）后的冷却截止时间。
+        # 这些操作也会触发 moved 事件，不拦的话刚展开就被吸回屏幕边。
+        self._suppress_snap_until = 0.0
 
     # ---------- 数据 ----------
 
@@ -606,6 +702,8 @@ class Api:
                 "mini_preset": int(self.state.get("mini_preset", 1)),
                 "collapsed": bool(self.state.get("collapsed", False)),
                 "collapse_edge": self.state.get("collapse_edge", ""),
+                "collapse_min": bool(self.state.get("collapse_min", True)),
+                "autostart": is_autostart_enabled(),
             },
             ensure_ascii=False,
         )
@@ -634,10 +732,34 @@ class Api:
         save_state(self.state)
         return self.get_window_state()
 
+    def set_collapse_min(self, enabled) -> str:
+        """开关：最小化时是否收进屏幕边缘。"""
+        self.state["collapse_min"] = bool(enabled)
+        save_state(self.state)
+        return self.get_window_state()
+
+    def set_autostart(self, enabled) -> str:
+        """开关：开机自启动（写 HKCU 的 Run 键，无需管理员权限）。"""
+        write_autostart(bool(enabled))
+        return self.get_window_state()
+
+    def _mute_snap(self, seconds: float = 0.9) -> None:
+        """接下来一小段时间内不做自动贴边。"""
+        self._suppress_snap_until = time.monotonic() + seconds
+
+    def set_dragging(self, flag) -> bool:
+        """前端拖动窗口期间置位：此时不做自动贴边。
+
+        拖动是 JS 逐帧调 move 模拟的，拖动中停顿超过防抖时长会被误判成
+        「拖完了」，窗口自己弹到边上。有这面旗子就能分清。
+        """
+        self._dragging = bool(flag)
+        return self._dragging
+
     def snap_now(self) -> str:
         """拖动结束后调用：靠近屏幕边缘就吸上去。"""
         win = self._win()
-        if win is None:
+        if win is None or self.state.get("collapsed"):
             return self.get_window_state()
         result = snap_window_to_edge(win, bool(self.state.get("snap", True)))
         if result:
@@ -661,6 +783,7 @@ class Api:
         self.state["mini"]["h"] = h
 
         if win is not None and self.state.get("mode", "mini") == "mini":
+            self._mute_snap()
             try:
                 win.resize(w, h)
                 tx, ty = clamp_to_screen(int(win.x), int(win.y), w, h)
@@ -809,13 +932,20 @@ class Api:
         return self.get_window_state()
 
     def minimize_window(self):
-        """最小化。若窗口贴着屏幕边缘，则收成一条贴边小条（而不是缩到任务栏）。"""
+        """最小化。
+
+        「最小化时收进边缘」开着（默认）时，不管窗口此刻在哪，都缩成贴边小条，
+        再点一下还原。之前要求窗口正好贴着屏幕边才收，很多人点完没反应，
+        以为功能坏了 —— 现在位置无关，点最小化必然缩小。
+        关掉这个开关就退回系统最小化。
+        """
         win = self._win()
         if win is None:
             return ""
-        edge = self._nearest_edge(win)
-        if edge and bool(self.state.get("snap", True)):
-            return self.collapse_window(edge)
+        if bool(self.state.get("collapse_min", True)):
+            edge = self._nearest_edge(win, limit=None)
+            if edge:
+                return self.collapse_window(edge)
         try:
             win.minimize()
         except Exception as exc:
@@ -824,16 +954,17 @@ class Api:
 
     # ---------- 收进屏幕边缘 ----------
 
-    def _nearest_edge(self, win) -> str | None:
-        """窗口离哪条屏幕边最近（在吸附阈值内才算）。"""
+    def _nearest_edge(self, win, limit: int | None = EDGE_SNAP_PX) -> str | None:
+        """窗口离哪条屏幕边最近。
+
+        limit=None 时不看距离，直接返回最近的一条边（最小化收边用）。
+        """
         try:
             hwnd = _hwnd_of(win)
             if not hwnd:
                 return None
             x, y, w, h = _window_rect(hwnd)
-            scr = webview.screens[0]
-            sx, sy = int(scr.x), int(scr.y)
-            sw, sh = int(scr.width), int(scr.height)
+            sx, sy, sw, sh = _screen_for(x, y, w, h)
             gaps = {
                 "left": abs(x - sx),
                 "right": abs(sx + sw - (x + w)),
@@ -841,7 +972,9 @@ class Api:
                 "bottom": abs(sy + sh - (y + h)),
             }
             edge = min(gaps, key=gaps.get)
-            return edge if gaps[edge] <= EDGE_SNAP_PX else None
+            if limit is not None and gaps[edge] > limit:
+                return None
+            return edge
         except Exception as exc:
             _log(f"nearest edge failed: {exc}")
             return None
@@ -857,8 +990,9 @@ class Api:
         except Exception:
             return self.get_window_state()
 
-        # 记住展开时要回到哪儿
-        slot = self.state.setdefault("mini", {})
+        # 记住展开时要回到哪儿（按当前模式存，完整视图要回到完整尺寸）
+        mode = self.state.get("mode", "mini")
+        slot = self.state.setdefault(mode, {})
         slot["x"], slot["y"], slot["w"], slot["h"] = x, y, w, h
 
         if edge in ("left", "right"):
@@ -866,9 +1000,7 @@ class Api:
         else:
             nw, nh = COLLAPSE_LONG, COLLAPSE_THIN
 
-        scr = webview.screens[0]
-        sx, sy = int(scr.x), int(scr.y)
-        sw, sh = int(scr.width), int(scr.height)
+        sx, sy, sw, sh = _screen_for(x, y, w, h)
 
         if edge == "left":
             nx = sx
@@ -908,9 +1040,15 @@ class Api:
         if win is None or not self.state.get("collapsed"):
             return self.get_window_state()
 
-        slot = self.state.get("mini") or {}
-        w = int(slot.get("w") or MINI_PRESETS[self.state.get("mini_preset", 1)][0])
-        h = int(slot.get("h") or MINI_PRESETS[self.state.get("mini_preset", 1)][1])
+        mode = self.state.get("mode", "mini")
+        slot = self.state.get(mode) or {}
+        if mode == "full":
+            fallback_w, fallback_h = FULL_W, FULL_H
+        else:
+            fallback_w, fallback_h = MINI_PRESETS[self.state.get("mini_preset", 1)][:2]
+        w = int(slot.get("w") or fallback_w)
+        h = int(slot.get("h") or fallback_h)
+        self._mute_snap(1.1)
 
         self.state["collapsed"] = False
         self.state["collapse_edge"] = ""
@@ -926,10 +1064,10 @@ class Api:
             win.move(tx, ty)
         except Exception as exc:
             _log(f"expand move failed: {exc}")
-        shape_window(win, 22)
+        shape_window(win, 22 if mode == "mini" else 14)
 
         save_state(self.state)
-        _log("expanded from edge")
+        _log(f"expanded from edge ({w}x{h})")
         return self.get_window_state()
 
     def close_window(self) -> None:
@@ -1156,6 +1294,7 @@ def main() -> None:
         导致客户区少掉一圈边框厚度（实测 380x560 会变成 364x521）。
         所以显示后再按目标尺寸 resize 一次，把尺寸拉回设计值。
         """
+        _log(f"on_shown: mode={mode} target={width}x{height} collapsed={state.get('collapsed')}")
         try:
             window.resize(width, height)
         except Exception as exc:
@@ -1189,7 +1328,9 @@ def main() -> None:
     snap_busy = {"v": False}
 
     def _do_auto_snap() -> None:
-        if snap_busy["v"] or not state.get("snap", True):
+        if snap_busy["v"] or not state.get("snap", True) or getattr(api, "_dragging", False):
+            return
+        if time.monotonic() < getattr(api, "_suppress_snap_until", 0.0):
             return
         win = holder.get("window")
         if win is None:

@@ -261,15 +261,33 @@
     });
 
     /* ---- 样式生效 ---- */
-    t('Liquid Glass 面板有 backdrop-filter', function () {
-      var el = document.querySelector('.glass-refract');
-      var bf = getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter;
-      return (bf && bf !== 'none') ? true : 'backdrop-filter=' + bf;
+    t('扁平规范：不再使用 backdrop-filter', function () {
+      var bad = [];
+      ['.glass-refract', '.glass-panel', '.settings', '.hero'].forEach(function (sel) {
+        var el = document.querySelector(sel);
+        if (!el) return;
+        var cs = getComputedStyle(el);
+        var bf = cs.backdropFilter || cs.webkitBackdropFilter;
+        if (bf && bf !== 'none') bad.push(sel + '=' + bf);
+      });
+      return bad.length === 0 ? true : bad.join(' ');
     });
-    t('玻璃面板背景为半透明', function () {
+    t('扁平规范：面板是纯白不透明底', function () {
       var el = document.querySelector('.glass-panel');
       var bg = getComputedStyle(el).backgroundColor;
-      return /rgba/.test(bg) ? true : 'bg=' + bg;
+      return bg === 'rgb(255, 255, 255)' ? true : 'bg=' + bg;
+    });
+    t('扁平规范：用 1px 发丝线分区', function () {
+      var el = document.querySelector('.minibar');
+      var cs = getComputedStyle(el);
+      var w = parseFloat(cs.borderBottomWidth);
+      return (w === 1 && cs.borderBottomStyle === 'solid') ? true
+        : 'border=' + cs.borderBottomWidth + ' ' + cs.borderBottomStyle;
+    });
+    t('扁平规范：背景是纯色画布', function () {
+      var el = document.querySelector('.bg-stage');
+      var bg = getComputedStyle(el).backgroundColor;
+      return bg === 'rgb(244, 246, 250)' ? true : 'bg=' + bg;
     });
     t('SVG 折射滤镜已定义', function () {
       var f = document.getElementById('lgRefract');
@@ -619,17 +637,39 @@
         HTMLAnchorElement.prototype.click = origClick;
       }
     });
-    t('齿轮打开设置页', function () {
+    t('顶栏不再有设置按钮', function () {
+      return document.getElementById('btnMenu') === null ? true : 'btnMenu 仍在';
+    });
+    t('侧边栏底部有设置入口', function () {
+      var b = document.getElementById('btnSettings');
+      if (!b) return '缺少 btnSettings';
+      var foot = b.closest('.sidebar-foot');
+      return foot ? true : '不在 sidebar-foot 里';
+    });
+    t('小卡片底部也有设置入口', function () {
+      var b = document.getElementById('btnSettingsMini');
+      if (!b) return '缺少 btnSettingsMini';
+      return b.closest('.mini-foot') ? true : '不在 mini-foot 里';
+    });
+    t('从侧边栏打开设置页', function () {
       var m = document.getElementById('settingsPanel');
-      document.getElementById('btnMenu').click();
+      document.getElementById('btnSettings').click();
       var opened = m.hidden === false;
       return opened ? true : '设置页没打开';
     });
     t('设置页含全部条目', function () {
       var need = ['setName', 'setSnap', 'setTop', 'setSize', 'appVersion',
-                  'menuUpdate', 'menuBackup', 'menuRestore', 'menuClearDone'];
+                  'menuUpdate', 'menuBackup', 'menuRestore', 'menuClearDone',
+                  'setCollapse', 'setAutoStart', 'menuQuit'];
       var miss = need.filter(function (id) { return !document.getElementById(id); });
       return miss.length === 0 ? true : '缺少 ' + miss.join(',');
+    });
+    t('设置页可从卡片入口打开', function () {
+      document.getElementById('setBack').click();
+      document.getElementById('btnSettingsMini').click();
+      var opened = document.getElementById('settingsPanel').hidden === false;
+      document.getElementById('setBack').click();
+      return opened ? true : '没打开';
     });
     t('设置页把旧下拉菜单去掉了', function () {
       return document.getElementById('appMenu') === null ? true : 'appMenu 仍在';
@@ -667,10 +707,11 @@
     });
 
     t('更新角标可开关', function () {
+      var dot = document.getElementById('btnSettings');
       A.setUpdateBadge(true);
-      var on = document.getElementById('btnMenu').classList.contains('has-update');
+      var on = dot.classList.contains('has-update');
       A.setUpdateBadge(false);
-      var off = document.getElementById('btnMenu').classList.contains('has-update');
+      var off = dot.classList.contains('has-update');
       return (on === true && off === false) ? true : 'on=' + on + ' off=' + off;
     });
     t('有新版本时按钮文案变化', function () {
@@ -716,7 +757,7 @@
 
   function runAsync(R, t) {
     /* ---- 设置页里改名字 ---- */
-    document.getElementById('btnMenu').click();
+    document.getElementById('btnSettings').click();
     document.getElementById('setName').value = '测试名称';
     document.getElementById('setNameSave').click();
 

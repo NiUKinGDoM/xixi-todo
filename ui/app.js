@@ -51,7 +51,11 @@
     countDone: $('countDone'),
     clearDoneBtn: $('clearDoneBtn'),
     /* 窗口 / 迷你模式 */
-    btnMenu: $('btnMenu'),
+    btnSettings: $('btnSettings'),
+    btnSettingsMini: $('btnSettingsMini'),
+    setAutoStart: $('setAutoStart'),
+    setCollapse: $('setCollapse'),
+    menuQuit: $('menuQuit'),
     menuBackup: $('menuBackup'),
     menuRestore: $('menuRestore'),
     menuClearDone: $('menuClearDone'),
@@ -981,7 +985,8 @@
 
   function setUpdateBadge(on) {
     updateState.hasUpdate = !!on;
-    if (el.btnMenu) el.btnMenu.classList.toggle('has-update', !!on);
+    if (el.btnSettings) el.btnSettings.classList.toggle('has-update', !!on);
+    if (el.btnSettingsMini) el.btnSettingsMini.classList.toggle('has-update', !!on);
     if (el.updateLabel) {
       el.updateLabel.textContent = on ? '发现新版本 ' + updateState.latest : '检查更新';
     }
@@ -1205,6 +1210,8 @@
     if (el.setName) el.setName.value = winState.app_name || 'xixiの待办';
     if (el.setSnap) el.setSnap.classList.toggle('is-on', winState.snap);
     if (el.setTop) el.setTop.classList.toggle('is-on', winState.on_top);
+    if (el.setCollapse) el.setCollapse.classList.toggle('is-on', winState.collapse_min);
+    if (el.setAutoStart) el.setAutoStart.classList.toggle('is-on', winState.autostart);
     if (el.sizeSeg) {
       var btns = el.sizeSeg.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
@@ -1215,7 +1222,8 @@
     if (el.setCount) el.setCount.textContent = String(todos.length);
   }
 
-  if (el.btnMenu) el.btnMenu.addEventListener('click', openSettings);
+  if (el.btnSettings) el.btnSettings.addEventListener('click', openSettings);
+  if (el.btnSettingsMini) el.btnSettingsMini.addEventListener('click', openSettings);
   if (el.setBack) el.setBack.addEventListener('click', closeSettings);
 
   function commitName() {
@@ -1249,6 +1257,29 @@
     });
   }
 
+  if (el.setCollapse) {
+    el.setCollapse.addEventListener('click', function () {
+      var next = !winState.collapse_min;
+      callApi('set_collapse_min', next ? '1' : '').then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyWindowState(st); else { winState.collapse_min = next; renderSettings(); }
+        toast(next ? '最小化时收进边缘：开' : '最小化时收进边缘：关');
+      });
+    });
+  }
+
+  if (el.setAutoStart) {
+    el.setAutoStart.addEventListener('click', function () {
+      var next = !winState.autostart;
+      callApi('set_autostart', next ? '1' : '').then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyWindowState(st);
+        renderSettings();
+        toast(next ? '已开启开机自启动' : '已关闭开机自启动');
+      });
+    });
+  }
+
   if (el.setTop) {
     el.setTop.addEventListener('click', function () {
       callApi('toggle_on_top').then(function (raw) {
@@ -1274,6 +1305,13 @@
     });
   }
 
+  if (el.menuQuit) {
+    el.menuQuit.addEventListener('click', function () {
+      askConfirm('退出应用？', '退出后待办都还在，下次打开继续。', '退出')
+        .then(function (ok) { if (ok) callApi('close_window'); });
+    });
+  }
+
   if (el.menuBackup) el.menuBackup.addEventListener('click', backup);
   if (el.menuRestore) el.menuRestore.addEventListener('click', restore);
   if (el.menuClearDone) {
@@ -1287,13 +1325,25 @@
 
   // 拖动标题栏结束后触发一次吸附（pywebview 的拖动在前端收不到结束事件，
   // 但 mouseup 是可以监听的，借此得知“拖完了”）
+  // 拖动是 JS 逐帧调 move 模拟的，拖到一半停手超过 0.45s 会被后端当成
+  // 「拖完了」直接吸到边上。所以按住时先关掉吸附判定，松手再补一次吸附。
   var dragRegion = document.querySelector('.pywebview-drag-region');
+  var draggingNow = false;
   if (dragRegion) {
-    dragRegion.addEventListener('mouseup', function () {
+    dragRegion.addEventListener('mousedown', function () {
+      draggingNow = true;
+      callApi('set_dragging', '1');
+    });
+  }
+  document.addEventListener('mouseup', function () {
+    // 只有真的从标题栏按下过才收尾，否则每次点按钮都会触发一次吸附
+    if (!draggingNow) return;
+    draggingNow = false;
+    callApi('set_dragging', '').then(function () {
       if (!winState.snap) return;
       setTimeout(function () { callApi('snap_now'); }, 60);
     });
-  }
+  });
 
   /* ---------- 右下角自由缩放 ---------- */
   // 无边框窗口没有系统边框，用户没法拖边改大小。
@@ -1364,7 +1414,8 @@
   var winState = {
     mode: 'mini', on_top: true, snap: true,
     app_name: 'xixiの待办', mini_preset: 1,
-    collapsed: false, collapse_edge: ''
+    collapsed: false, collapse_edge: '',
+    collapse_min: true, autostart: false
   };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
@@ -1493,7 +1544,11 @@
     el.btnMin.addEventListener('click', function () {
       callApi('minimize_window').then(function (raw) {
         var st = parseState(raw);
-        // 贴近屏幕边缘时后端会收成小条；否则普通最小化，返回空
+        // 收边开关打开时后端返回收起状态；关掉则返回空（走系统最小化）
+        if (st && st.collapsed) {
+          applyWindowState(st);
+          return;
+        }
         if (st) applyWindowState(st);
       });
     });

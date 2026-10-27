@@ -1,6 +1,6 @@
-# xixiの待办清单·Liquid Glass桌面应用
+# xixiの待办清单·扁平桌面应用
 
-Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉语言。
+Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单一强调色，没有模糊与渐变光效。
 
 **桌面小卡片**
 
@@ -10,16 +10,27 @@ Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉�
 
 <img src="ui/preview.png" width="720" alt="完整视图">
 
-**设置页**（齿轮按钮进入，更新/备份/窗口配置都在这里）
+**设置页**（侧边栏底部或小卡片右下角进入，更新/备份/窗口配置都在这里）
 
 <img src="ui/preview-settings.png" width="320" alt="设置页">
 
 
 ---
 
-## 直接使用
+## 安装（推荐）
 
-双击 **`dist\xixiの待办清单.exe`** 即可运行，无需安装 Python 或任何运行时。
+双击 **`dist\xixiの待办清单-安装包.exe`**：
+
+- 装到 `%LOCALAPPDATA%\Programs\XiXiTodo`，**不需要管理员权限**，不弹 UAC
+- 自动创建开始菜单与桌面快捷方式，安装时可勾选 **开机自启动**
+- 控制面板「应用和功能」里能正常卸载
+- 卸载**不删数据**，待办仍留在 `%APPDATA%\xixi-todo`，重装后接着用
+
+装完之后从桌面/开始菜单打开即可，和普通软件一样。
+
+## 免安装
+
+不想安装就双击 **`dist\xixiの待办清单.exe`** 直接跑，无需 Python 或任何运行时。
 
 **两种形态，一键切换：**
 
@@ -33,14 +44,14 @@ Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉�
 | 操作 | 位置 |
 |---|---|
 | 拖动窗口 | 按住标题栏左侧空白处拖动 |
-| 自动贴边 | 拖到屏幕边缘松手即吸附（开关在设置页） |
-| 自由缩放 | 拖右下角的小手柄，任意尺寸；设置页里也有三档预设 |
-| 应用改名 | 设置页 → 应用名称，小卡片与完整视图同时生效 |
-| 收进边缘 | 贴着屏幕边时点最小化，缩成贴边小条，点一下还原 |
+| 自动贴边 | 拖到屏幕边缘松手即吸附（开关在设置里） |
+| 自由缩放 | 拖右下角的小手柄，任意尺寸；设置里也有三档预设 |
+| 应用改名 | 设置 → 名称，小卡片与完整视图同时生效 |
+| 收进边缘 | 点最小化就缩成贴边小条（不管窗口在哪），点小条还原；可在设置里关掉 |
 | 置顶开关 | 标题栏图钉按钮（高亮＝已置顶） |
 | 小卡片 ⇄ 完整 | 标题栏 ⛶ 按钮 |
-| 最小化 / 关闭 | 标题栏右端两个按钮（贴边时最小化＝收进边缘） |
-| 设置 | 标题栏齿轮按钮，所有配置与数据操作都在里面 |
+| 最小化 / 关闭 | 标题栏右端两个按钮 |
+| 设置 | 完整视图：左侧栏底部「设置」；小卡片：右下角小齿轮 |
 
 - 数据保存在 `%APPDATA%\xixi-todo\todos.json`
 - 窗口状态保存在 `%APPDATA%\xixi-todo\window.json`
@@ -66,7 +77,8 @@ Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉�
 | 编辑 / 删除 | 悬停任务点铅笔 / 垃圾桶图标 |
 | 分类筛选 | 全部 / 今天 / 未完成 / 已逾期 / 已完成 |
 | 进度统计 | 完成百分比与逾期数量 |
-| 备份恢复 | 设置页 → 导出备份 / 导入恢复（JSON） |
+| 备份恢复 | 设置 → 导出备份 / 导入恢复（JSON） |
+| 开机自启动 | 设置 → 启动 → 开机自启动（安装包安装时也能勾） |
 
 ### 快速添加语法
 
@@ -165,29 +177,23 @@ curl -s "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json" | h
 
 ---
 
-## 视觉实现：真 Liquid Glass
+## 视觉：扁平化
 
-不只是普通磨砂玻璃，而是用 SVG 滤镜做了**真实的光学折射**：
+整个界面只有三样东西支撑层次，不靠光效：
 
-```
-背景动态极光层
-    ↓
-feGaussianBlur(26)      ← 先散射（磨砂）
-    ↓
-feDisplacementMap(44)   ← 用 feTurbulence 噪声做透镜位移
-    ↓
-三通道分离 + 偏移        ← 制造边缘色散彩边
-    ↓
-feBlend(screen) 合回
-    ↓
-backdrop-filter: url(#lgRefract)
-```
+1. **纯色底**（`#f4f6fa`）+ **白色表面**（`#ffffff`）
+2. **1px 发丝线**（`#e6eaf2`）做分区：侧边栏右边线、标题栏下边线、列表行分隔线
+3. **单一强调色**（`#2563eb`）只出现在主按钮、选中态、开关打开态
 
-三条材质层级：
+具体规则：
 
-- `.glass-refract` — 主面板，挂 SVG 折射滤镜（WebView2 / Chromium 专属特性）
-- `.glass-panel` — 侧边栏、弹窗，`backdrop-filter: blur(32px) saturate(115%)`
-- 卡片与控件 — 半透明白层，不再叠加滤镜（祖先 `backdrop-filter` 会创建 backdrop root，子元素再叠会失效）
+- 没有任何 `backdrop-filter` / SVG 折射 / 多层阴影，`--glass-blur: 0`
+- 圆角收敛到 9–14px（原来是 26px）
+- 完整视图是**一整块连续界面**：侧边栏与主区之间只有一条分隔线，不再有浮起来的卡片感
+- 小卡片是纯白窗，只有标题栏下一条线
+
+历史说明：早期版本走过 Liquid Glass 路线（SVG 折射 + backdrop-filter），
+视觉好看但在 380px 的小卡片上信息密度太低，已整体替换为扁平。
 
 ---
 
@@ -201,10 +207,18 @@ venv\Scripts\pip install pywebview pyinstaller pillow
 # 2. 生成图标（改了配色才需要）
 venv\Scripts\python make_icon.py
 
-# 3. 打包
+# 3. 打包应用
 venv\Scripts\python build.py
 # 产物：dist\xixiの待办清单.exe（另存一份 dist\xixi-todo.exe 供更新下载）
+
+# 4. 打包安装包（需要 Inno Setup 6）
+winget install JRSoftware.InnoSetup
+venv\Scripts\python build_installer.py
+# 产物：dist\xixiの待办清单-安装包.exe
 ```
+
+安装包脚本由 `build_installer.py` 现场生成（版本号从 `version.json` 读），
+中文界面靠 `installer/ChineseSimplified.isl`，不依赖系统语言。
 
 ### 开发时快速预览
 
@@ -228,12 +242,12 @@ run_tests.bat
 
 | 测试 | 覆盖 | 数量 |
 |---|---|---|
-| `tests/smoke.js`（Chrome headless 注入） | 增删改查、优先级、逾期判定、筛选、排序、统计、持久化、元素遮挡、Liquid Glass 样式、迷你/完整模式、重复周期、备注、快速语法、拖拽排序、设置页、贴边开关、尺寸档、缩放手柄、分组已移除 | 111 项 |
-| `test_window.py`（无需 GUI） | 模式切换的 resize/move、位置快照、置顶开关、状态落盘与容错、屏幕边界钳制、边缘识别、收起态快照保护、无窗口健壮性 | 42 项 |
+| `tests/smoke.js`（Chrome headless 注入） | 增删改查、优先级、逾期判定、筛选、排序、统计、持久化、元素遮挡、扁平视觉规范、迷你/完整模式、重复周期、备注、快速语法、拖拽排序、设置页入口与条目、贴边开关、收边开关、自启动开关、尺寸档、缩放手柄、分组已移除 | 117 项 |
+| `test_window.py`（无需 GUI） | 模式切换的 resize/move、位置快照、置顶开关、状态落盘与容错、屏幕边界钳制、边缘识别、收起/展开还原、任意位置最小化收边、自启动注册表守卫、无窗口健壮性 | 56 项 |
 | `test_features.py`（无需 GUI） | 文件存储与容错、备份导出/导入（含取消与文件缺失）、全字段往返、提醒判定与宽限期 | 33 项 |
 | `test_integration.py`（真实 WebView2） | Store 读写、损坏数据容错、JS↔Python 桥接、启动自动加载、交互后落盘、重载读最新 | 16 项 |
 
-合计 **202 项**。
+合计 **222 项**。
 
 界面截图与真实窗口抓图：
 
@@ -249,6 +263,8 @@ venv\Scripts\python tests\grab_window.py out.png   # 抓运行中的窗口
 todo-glass/
 ├── app.py                 桌面壳：窗口形态、数据持久化、单实例锁、到期提醒
 ├── build.py               PyInstaller 打包脚本
+├── build_installer.py     生成 Inno Setup 脚本并编译安装包
+├── installer/             安装包模板（setup.iss 自动生成）与中文语言包
 ├── make_icon.py           图标生成（多尺寸 ICO，4x 超采样）
 ├── test_integration.py    真实 WebView2 数据集成测试
 ├── test_window.py         窗口形态逻辑测试（无需 GUI）
@@ -260,7 +276,8 @@ todo-glass/
 │   ├── app.js             业务逻辑、快速语法解析、渲染、桥接、窗口控制
 │   ├── app.ico            应用图标
 │   ├── preview-mini.png   小卡片预览
-│   └── preview.png        完整视图预览
+│   ├── preview.png        完整视图预览
+│   └── preview-settings.png 设置页预览
 ├── tests/
 │   ├── smoke.js           前端冒烟测试用例
 │   ├── make-test.js       生成注入测试副本
@@ -268,11 +285,21 @@ todo-glass/
 │   ├── grab_window.py     抓取运行窗口截图
 │   └── click_mode.py      真实鼠标点击验证形态切换
 └── dist/
-    ├── xixiの待办清单.exe   ← 交付物
-    └── xixi-todo.exe         ← 同内容英文别名（更新检查用）
+    ├── xixiの待办清单-安装包.exe  ← 交付物（推荐）
+    ├── xixiの待办清单.exe         ← 免安装版
+    └── xixi-todo.exe               ← 同内容英文别名（更新检查用）
 ```
 
 ---
+
+22. **程序化改窗口会触发 moved，刚展开就被吸回边上**
+    展开贴边小条、切尺寸、切模式都会 `resize` / `move`，pywebview 照样抛 `moved` 事件，
+    防抖 0.45 秒后自动贴边就把窗口拽回屏幕边 —— 用户看到的是「点展开之后窗口自己跑了」。
+    解法：这类程序化操作调用 `_mute_snap()`，在 1 秒内跳过自动贴边；拖动结束的吸附照常。
+
+23. **冷启动不能沿用「收起」状态**
+    收起态（20×104 的贴边小条）只适合当前会话。上次如果是收起状态退出、甚至被强杀，
+    再启动就会变成屏幕边一条 20px 的缝。`load_state()` 里直接把它重置为 False。
 
 ## 技术要点与坑位记录
 
