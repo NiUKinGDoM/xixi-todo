@@ -1,0 +1,44 @@
+# 构建中间文件（dist 里的 exe 需要入库，供更新检查下载）
+build/
+
+# Python 虚拟环境
+venv/
+.venv/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 改名前的旧版本产物，不再发布
+dist/待办事项.exe
+
+# 测试临时产物
+tests/test.html
+tests/prev_*.html
+tests/frame_mini.html
+tests/frame.html
+tests/mini.html
+tests/probe*.html
+tests/probe*.js
+tests/styles.css
+tests/app.js
+tests/*.png
+tests/*.bmp
+tests/*.log
+tests/*.txt
+tests/*.tmp
+
+# 图标生成的预览图
+ui/icon_preview.png
+
+# 打包生成的 spec
+*.spec
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 本地临时目录
+.tb/
