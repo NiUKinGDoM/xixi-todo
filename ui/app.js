@@ -997,6 +997,19 @@
     'https://raw.githubusercontent.com/' + REPO + '/main/version.json'
   ];
 
+  // 兜底的一路：GitHub 官方 Releases API。反代缓存 version.json 可能十几分钟
+  // 还是旧版本，API 不走缓存，发版后立刻就能看到新 tag。
+  var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+
+  // 清单里没有下载地址时用的默认镜像（API 那一路只有版本号，没有 downloads）
+  var DEFAULT_DOWNLOAD = 'https://github.com/' + REPO + '/releases/latest/download/xixi-todo-setup.exe';
+  var DEFAULT_MIRRORS = [
+    'https://ghfast.top/' + DEFAULT_DOWNLOAD,
+    'https://gh-proxy.com/' + DEFAULT_DOWNLOAD,
+    'https://ghproxy.net/' + DEFAULT_DOWNLOAD,
+    DEFAULT_DOWNLOAD
+  ];
+
   var updateState = {
     checking: false,
     latest: null,
@@ -1057,6 +1070,17 @@
         return data;
       }).catch(function () { return null; });
     });
+
+    // Releases API：没有缓存的独立一路，拿到的版本号最可信
+    jobs.push(fetchWithTimeout(API_LATEST, 4500).then(function (rel) {
+      var tag = rel && (rel.tag_name || rel.name);
+      if (!tag) throw new Error('bad release');
+      return {
+        version: String(tag).replace(/^v/i, ''),
+        notes: rel.body || '',
+        downloads: null
+      };
+    }).catch(function () { return null; }));
 
     return Promise.all(jobs).then(function (list) {
       var best = null;
@@ -1216,6 +1240,8 @@
     list.forEach(function (u) {
       if (u && out.indexOf(u) < 0) out.push(u);
     });
+    // 版本号来自 Releases API 那一路时没有 downloads 字段，用默认镜像兜住
+    if (!out.length) out = DEFAULT_MIRRORS.slice();
     return out;
   }
 
