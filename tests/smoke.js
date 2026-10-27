@@ -482,36 +482,25 @@
       return A.todos[0].done === true ? true : 'done 未变化';
     });
 
-    /* ---- 分组 ---- */
-    t('默认分组已就绪', function () {
-      return (A.groups.length >= 4 && A.groups.indexOf('工作') >= 0) ? true : A.groups.join(',');
+    /* ---- 分组已移除 ---- */
+    t('分组接口已不在应用对象上', function () {
+      var bad = [];
+      ['groups', 'groupFilter', 'setGroupFilter', 'createGroup'].forEach(function (k) {
+        if (k in A) bad.push(k);
+      });
+      return bad.length === 0 ? true : '仍存在：' + bad.join(',');
     });
-    t('分组可写入任务', function () {
+    t('界面里没有分组区块', function () {
+      var n = document.querySelectorAll('#groupList, #groupMenu, #editGroupChips, .group-section').length;
+      return n === 0 ? true : '残留 ' + n + ' 个节点';
+    });
+    t('旧数据里的 group 字段不再渲染标签', function () {
       A.todos = [{
         id: 'g1', title: '写周报', priority: 'medium', due: '',
         group: '工作', done: false, createdAt: 2
       }];
       A.render();
-      var tag = document.querySelector('.todo-item .tag-group');
-      return tag && tag.textContent === '工作' ? true : '没有分组标签';
-    });
-    t('按分组筛选只显示该组', function () {
-      A.todos = [
-        { id: 'g1', title: '写周报', priority: 'medium', due: '', group: '工作', done: false, createdAt: 2 },
-        { id: 'g2', title: '买菜', priority: 'medium', due: '', group: '生活', done: false, createdAt: 1 }
-      ];
-      A.setGroupFilter('工作');
-      var vis = A.visibleTodos();
-      var ok = vis.length === 1 && vis[0].title === '写周报';
-      A.setGroupFilter('all');
-      return ok ? true : 'n=' + vis.length;
-    });
-    t('分组筛选恢复全部', function () {
-      return A.visibleTodos().length === 2 ? true : 'n=' + A.visibleTodos().length;
-    });
-    t('侧边栏分组列表已渲染', function () {
-      var items = document.querySelectorAll('#groupList .group-item');
-      return items.length >= 2 ? true : '项数=' + items.length;
+      return document.querySelector('.tag-group') === null ? true : '仍渲染了分组标签';
     });
 
     /* ---- 备注 ---- */
@@ -535,9 +524,10 @@
       var r = A.parseQuickInput('写方案 !高');
       return (r.priority === 'high' && r.title === '写方案') ? true : JSON.stringify(r);
     });
-    t('语法-解析分组', function () {
+    t('语法-不再解析分组', function () {
       var r = A.parseQuickInput('整理资料 #工作');
-      return (r.group === '工作' && r.title === '整理资料') ? true : JSON.stringify(r);
+      return (r.group === undefined && r.title.indexOf('#工作') >= 0)
+        ? true : JSON.stringify(r);
     });
     t('语法-解析明天', function () {
       var r = A.parseQuickInput('交报告 明天');
@@ -558,8 +548,8 @@
       return (r.repeat === 'weekly' && r.title === '周会') ? true : JSON.stringify(r);
     });
     t('语法-组合解析', function () {
-      var r = A.parseQuickInput('明天9点 客户拜访 !高 #工作 每天');
-      var ok = r.priority === 'high' && r.group === '工作' &&
+      var r = A.parseQuickInput('明天9点 客户拜访 !高 每天');
+      var ok = r.priority === 'high' &&
                r.repeat === 'daily' && r.time === '09:00' && !!r.due;
       return ok ? true : JSON.stringify(r);
     });
@@ -576,14 +566,11 @@
     t('语法添加后字段生效', function () {
       A.todos = [];
       var inp = document.getElementById('inputText');
-      inp.value = '语法任务 明天 !高 #学习';
+      inp.value = '语法任务 明天 !高';
       document.getElementById('addBtn').click();
       var t = A.todos[0];
-      return (t && t.priority === 'high' && t.group === '学习' && t.due && t.title === '语法任务')
+      return (t && t.priority === 'high' && t.due && t.title === '语法任务')
         ? true : JSON.stringify(t);
-    });
-    t('语法新增的分组自动登记', function () {
-      return A.groups.indexOf('学习') >= 0 ? true : A.groups.join(',');
     });
 
     /* ---- 拖拽排序 ---- */
@@ -632,13 +619,24 @@
         HTMLAnchorElement.prototype.click = origClick;
       }
     });
-    t('菜单可开合', function () {
-      var m = document.getElementById('appMenu');
+    t('齿轮打开设置页', function () {
+      var m = document.getElementById('settingsPanel');
       document.getElementById('btnMenu').click();
       var opened = m.hidden === false;
-      document.getElementById('btnMenu').click();
-      var closed = m.hidden === true;
-      return (opened && closed) ? true : 'opened=' + opened + ' closed=' + closed;
+      return opened ? true : '设置页没打开';
+    });
+    t('设置页含全部条目', function () {
+      var need = ['setName', 'setSnap', 'setTop', 'setSize', 'appVersion',
+                  'menuUpdate', 'menuBackup', 'menuRestore', 'menuClearDone'];
+      var miss = need.filter(function (id) { return !document.getElementById(id); });
+      return miss.length === 0 ? true : '缺少 ' + miss.join(',');
+    });
+    t('设置页把旧下拉菜单去掉了', function () {
+      return document.getElementById('appMenu') === null ? true : 'appMenu 仍在';
+    });
+    t('设置页可返回', function () {
+      document.getElementById('setBack').click();
+      return document.getElementById('settingsPanel').hidden === true ? true : '未关闭';
     });
 
     /* ---- 版本号比较（更新检查的核心判断） ---- */
@@ -683,25 +681,9 @@
     });
 
     /* ---- 重命名 / 贴边 / 尺寸 / 缩放 ---- */
-    t('重命名弹窗可打开并回填', function () {
-      var mask = document.getElementById('dlgMask');
-      if (!mask) return '缺少 dlgMask';
-      document.getElementById('menuRename').click();
-      var shown = mask.hidden === false;
-      var val = document.getElementById('dlgInput').value;
-      return (shown && val.length > 0) ? true : 'shown=' + shown + ' val=' + val;
-    });
-    t('重命名弹窗可取消', function () {
-      document.getElementById('dlgCancel').click();
-      return document.getElementById('dlgMask').hidden === true ? true : '未关闭';
-    });
-    t('重命名确认后标题同步', function () {
-      var mask = document.getElementById('dlgMask');
-      document.getElementById('menuRename').click();
-      document.getElementById('dlgInput').value = '测试名称';
-      document.getElementById('dlgOk').click();
-      // callApi 无桥接时返回 null，走 applyAppName 兜底
-      return mask.hidden === true ? true : '弹窗未关闭';
+    t('设置页里能改应用名', function () {
+      var inp = document.getElementById('setName');
+      return inp && inp.value.length > 0 ? true : '输入框为空';
     });
     t('缩放手柄存在且可交互', function () {
       var g = document.getElementById('resizeGrip');
@@ -733,60 +715,60 @@
   }
 
   function runAsync(R, t) {
-    /* ---- 重命名 ---- */
-    document.getElementById('menuRename').click();
-    document.getElementById('dlgInput').value = '测试名称';
-    document.getElementById('dlgOk').click();
+    /* ---- 设置页里改名字 ---- */
+    document.getElementById('btnMenu').click();
+    document.getElementById('setName').value = '测试名称';
+    document.getElementById('setNameSave').click();
 
     setTimeout(function () {
-      t('重命名后小卡片标题已变', function () {
-        var el = document.querySelector('.minibar-title');
-        return el && el.textContent === '测试名称' ? true : 'text=' + (el && el.textContent);
+      t('改名字后小卡片标题已变', function () {
+        var e = document.querySelector('.minibar-title');
+        return e && e.textContent === '测试名称' ? true : 'text=' + (e && e.textContent);
       });
-      t('重命名后侧边栏标题已变', function () {
-        var el = document.querySelector('.brand-text h1');
-        return el && el.textContent === '测试名称' ? true : 'text=' + (el && el.textContent);
+      t('改名字后侧边栏标题已变', function () {
+        var e = document.querySelector('.brand-text h1');
+        return e && e.textContent === '测试名称' ? true : 'text=' + (e && e.textContent);
       });
 
       /* ---- 自动贴边开关 ---- */
-      var val = document.getElementById('snapVal');
-      var before = val.textContent;
-      document.getElementById('menuSnap').click();
+      var sw = document.getElementById('setSnap');
+      var before = sw.classList.contains('is-on');
+      sw.click();
 
       setTimeout(function () {
-        var after = val.textContent;
-        document.getElementById('menuSnap').click();
+        var after = sw.classList.contains('is-on');
+        sw.click();
 
         setTimeout(function () {
-          var back = val.textContent;
-          t('贴边开关可切换且显示状态', function () {
+          var back = sw.classList.contains('is-on');
+          t('设置页贴边开关可切换', function () {
             return (after !== before && back === before) ? true
               : 'before=' + before + ' after=' + after + ' back=' + back;
           });
 
-          /* ---- 尺寸档循环 ---- */
-          var sizeVal = document.getElementById('sizeVal');
-          var seen = {};
-          var i = 0;
-          (function step() {
-            if (i >= 3) {
-              var n = Object.keys(seen).length;
-              t('尺寸档循环切换', function () {
-                return n === 3 ? true : '只出现 ' + n + ' 种：' + Object.keys(seen).join('/');
-              });
-              return;
-            }
-            i++;
-            document.getElementById('menuSize').click();
+          /* ---- 尺寸分段 ---- */
+          var seg = document.getElementById('setSize');
+          var btns = seg.querySelectorAll('button');
+          btns[0].click();
+
+          setTimeout(function () {
+            t('尺寸分段切到紧凑后高亮', function () {
+              return btns[0].classList.contains('is-active') ? true : '未高亮';
+            });
+            btns[1].click();
             setTimeout(function () {
-              seen[sizeVal.textContent] = 1;
-              step();
-            }, 60);
-          })();
+              t('尺寸分段切回标准后高亮', function () {
+                return btns[1].classList.contains('is-active') &&
+                       !btns[0].classList.contains('is-active')
+                  ? true : '状态没跟上';
+              });
+            }, 80);
+          }, 80);
         }, 80);
       }, 80);
     }, 120);
   }
+
 
   setTimeout(run, 1400);
 })();

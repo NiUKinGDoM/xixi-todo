@@ -8,17 +8,12 @@
 
   /* ---------- 状态 ---------- */
   var todos = [];
-  var groups = [];              // 分组名数组，顺序即显示顺序
   var filter = 'all';           // 状态筛选
-  var groupFilter = 'all';      // 'all' 或分组名
   var editingId = null;
   var composePriority = 'medium';
   var editPriority = 'medium';
-  var editGroup = '';
   var toastTimer = null;
   var dragId = null;
-
-  var DEFAULT_GROUPS = ['工作', '生活', '学习', '其他'];
 
   /* ---------- DOM ---------- */
   var $ = function (id) { return document.getElementById(id); };
@@ -39,7 +34,6 @@
     editTime: $('editTime'),
     editRepeat: $('editRepeat'),
     editNote: $('editNote'),
-    editGroupChips: $('editGroupChips'),
     editPrioritySeg: $('editPrioritySeg'),
     editSave: $('editSave'),
     editDelete: $('editDelete'),
@@ -47,10 +41,6 @@
     todayLabel: $('todayLabel'),
     heroTitle: $('heroTitle'),
     heroSub: $('heroSub'),
-    groupBtn: $('groupBtn'),
-    groupMenu: $('groupMenu'),
-    groupList: $('groupList'),
-    addGroupBtn: $('addGroupBtn'),
     progressPct: $('progressPct'),
     progressFill: $('progressFill'),
     progressNote: $('progressNote'),
@@ -62,18 +52,12 @@
     clearDoneBtn: $('clearDoneBtn'),
     /* 窗口 / 迷你模式 */
     btnMenu: $('btnMenu'),
-    appMenu: $('appMenu'),
     menuBackup: $('menuBackup'),
     menuRestore: $('menuRestore'),
     menuClearDone: $('menuClearDone'),
     menuUpdate: $('menuUpdate'),
     updateLabel: $('updateLabel'),
     appVersion: $('appVersion'),
-    menuRename: $('menuRename'),
-    menuSnap: $('menuSnap'),
-    menuSize: $('menuSize'),
-    snapVal: $('snapVal'),
-    sizeVal: $('sizeVal'),
     dlgMask: $('dlgMask'),
     dlgTitle: $('dlgTitle'),
     dlgDesc: $('dlgDesc'),
@@ -81,6 +65,15 @@
     dlgOk: $('dlgOk'),
     dlgCancel: $('dlgCancel'),
     resizeGrip: $('resizeGrip'),
+    settingsPanel: $('settingsPanel'),
+    setBack: $('setBack'),
+    setName: $('setName'),
+    setNameSave: $('setNameSave'),
+    setSnap: $('setSnap'),
+    setTop: $('setTop'),
+    sizeSeg: $('setSize'),
+    setCount: $('setCount'),
+    collapsedMark: $('collapsedMark'),
     btnPin: $('btnPin'),
     btnMode: $('btnMode'),
     btnMin: $('btnMin'),
@@ -122,19 +115,6 @@
     }
   }
 
-  function saveGroups() {
-    var payload = JSON.stringify(groups);
-    var a = bridge();
-    if (a && typeof a.save_groups === 'function') {
-      try {
-        var r = a.save_groups(payload);
-        if (r && typeof r.catch === 'function') r.catch(function () {});
-      } catch (e) { /* ignore */ }
-    } else {
-      try { localStorage.setItem('groups', payload); } catch (e) { /* ignore */ }
-    }
-  }
-
   function parseJson(raw) {
     if (!raw) return null;
     try {
@@ -168,10 +148,9 @@
   }
 
   function load() {
-    return Promise.all([loadKey('load_todos', 'todos'), loadKey('load_groups', 'groups')])
-      .then(function (res) {
-        return { todos: res[0], groups: res[1] };
-      });
+    return loadKey('load_todos', 'todos').then(function (list) {
+      return { todos: list };
+    });
   }
 
   /* ---------- 日期与周期工具 ---------- */
@@ -306,7 +285,7 @@
 
   function parseQuickInput(raw) {
     var text = ' ' + raw + ' ';
-    var out = { title: '', priority: '', group: '', due: '', time: '', repeat: '' };
+    var out = { title: '', priority: '', due: '', time: '', repeat: '' };
 
     // 1) 优先级
     text = text.replace(new RegExp('\\s!([高中低hml])' + BOUND, 'g'), function (_, k) {
@@ -321,12 +300,6 @@
     text = text.replace(new RegExp('\\s(每周|每星期)' + BOUND, 'g'), function () { out.repeat = 'weekly'; return ' '; });
     text = text.replace(new RegExp('\\s每月' + BOUND, 'g'), function () { out.repeat = 'monthly'; return ' '; });
     text = text.replace(new RegExp('\\s每年' + BOUND, 'g'), function () { out.repeat = 'yearly'; return ' '; });
-
-    // 3) 分组
-    text = text.replace(/\s#([^\s#]{1,12})/g, function (_, g) {
-      out.group = g;
-      return ' ';
-    });
 
     // 4) 日期（必须先于时间解析：日期被替换成空格后，时间才有分隔符可用）
     var today = new Date();
@@ -441,11 +414,6 @@
     });
   }
 
-  function inGroup(t) {
-    if (groupFilter === 'all') return true;
-    return (t.group || '') === groupFilter;
-  }
-
   function visibleTodos() {
     var t = todayStr();
     var out;
@@ -465,7 +433,6 @@
       default:
         out = todos.slice();
     }
-    out = out.filter(inGroup);
     return sortTodos(out);
   }
 
@@ -475,8 +442,7 @@
   };
 
   function heroTitleText() {
-    if (groupFilter === 'all') return FILTER_TITLE[filter];
-    return groupFilter + ' · ' + FILTER_TITLE[filter];
+    return FILTER_TITLE[filter];
   }
 
   function render() {
@@ -489,7 +455,6 @@
     el.list.style.display = list.length ? '' : 'none';
 
     updateStats();
-    renderGroupList();
   }
 
   function tag(cls, text) {
@@ -543,10 +508,6 @@
     pt.innerHTML = '<span>' + PRIO_TEXT[t.priority || 'medium'] + '</span>' +
                    '<span class="prio-full">优先级</span>';
     meta.appendChild(pt);
-
-    if (t.group) {
-      meta.appendChild(tag('tag tag-group', t.group));
-    }
 
     if (t.due) {
       var diff = daysUntil(t.due);
@@ -654,91 +615,6 @@
     render();
   }
 
-  /* ---------- 分组 ---------- */
-  function ensureGroups() {
-    if (!groups.length) groups = DEFAULT_GROUPS.slice();
-    // 任务里出现但分组列表没有的，补进去
-    todos.forEach(function (t) {
-      if (t.group && groups.indexOf(t.group) < 0) groups.push(t.group);
-    });
-  }
-
-  function renderGroupList() {
-    if (!el.groupList) return;
-    var counts = {};
-    todos.forEach(function (t) {
-      if (t.done) return;
-      var g = t.group || '';
-      counts[g] = (counts[g] || 0) + 1;
-    });
-
-    el.groupList.innerHTML = '';
-
-    var all = document.createElement('button');
-    all.className = 'group-item' + (groupFilter === 'all' ? ' is-active' : '');
-    all.setAttribute('data-group', 'all');
-    all.innerHTML = '<span>全部分组</span><em>' +
-      todos.filter(function (t) { return !t.done; }).length + '</em>';
-    all.addEventListener('click', function () { setGroupFilter('all'); });
-    el.groupList.appendChild(all);
-
-    groups.forEach(function (g) {
-      var b = document.createElement('button');
-      b.className = 'group-item' + (groupFilter === g ? ' is-active' : '');
-      b.setAttribute('data-group', g);
-      b.innerHTML = '<span></span><em>' + (counts[g] || 0) + '</em>';
-      b.firstChild.textContent = g;
-      b.addEventListener('click', function () { setGroupFilter(g); });
-      el.groupList.appendChild(b);
-    });
-  }
-
-  function setGroupFilter(g) {
-    groupFilter = g;
-    el.groupMenu.hidden = true;
-    if (el.groupBtn) el.groupBtn.classList.remove('is-open');
-    render();
-  }
-
-  function renderGroupMenu() {
-    if (!el.groupMenu) return;
-    el.groupMenu.innerHTML = '';
-
-    function item(name, label) {
-      var b = document.createElement('button');
-      b.className = 'gm-item' + (groupFilter === name ? ' is-active' : '');
-      b.setAttribute('data-group', name);
-      b.textContent = label;
-      b.addEventListener('click', function () { setGroupFilter(name); });
-      el.groupMenu.appendChild(b);
-    }
-
-    item('all', '全部分组');
-    groups.forEach(function (g) { item(g, g); });
-
-    var add = document.createElement('button');
-    add.className = 'gm-item gm-add';
-    add.textContent = '＋ 新建分组';
-    add.addEventListener('click', function () {
-      el.groupMenu.hidden = true;
-      createGroup();
-    });
-    el.groupMenu.appendChild(add);
-  }
-
-  function createGroup() {
-    askText('新建分组', '', 12).then(function (name) {
-      if (name === null) return;
-      name = String(name).trim().slice(0, 12);
-      if (!name) return;
-      if (groups.indexOf(name) >= 0) { toast('分组已存在'); return; }
-      groups.push(name);
-      saveGroups();
-      render();
-      toast('已新建分组：' + name);
-    });
-  }
-
   /* ---------- 统计 ---------- */
   function updateStats() {
     var t = todayStr();
@@ -803,17 +679,10 @@
       due: q.due || el.inputDate.value || '',
       time: q.time || '',
       repeat: q.repeat || 'none',
-      group: q.group || '',
       note: '',
       done: false,
       createdAt: Date.now()
     };
-
-    // 新分组自动登记
-    if (task.group && groups.indexOf(task.group) < 0) {
-      groups.push(task.group);
-      saveGroups();
-    }
 
     // 新任务排在最前：给一个比现有 order 更小的值
     var minOrder = null;
@@ -838,7 +707,6 @@
     if (task.due) extras.push(formatDue(task.due));
     if (task.time) extras.push(task.time);
     if (task.repeat !== 'none') extras.push(REPEAT_TEXT[task.repeat]);
-    if (task.group) extras.push('#' + task.group);
     toast('已添加' + (extras.length ? '：' + extras.join(' · ') : ''));
   }
 
@@ -892,7 +760,6 @@
     if (!t) return;
     editingId = id;
     editPriority = t.priority || 'medium';
-    editGroup = t.group || '';
 
     el.editText.value = t.title;
     el.editDate.value = t.due || '';
@@ -900,7 +767,6 @@
     el.editRepeat.value = t.repeat || 'none';
     el.editNote.value = t.note || '';
     syncSeg(el.editPrioritySeg, editPriority);
-    renderGroupChips();
 
     el.modalMask.hidden = false;
     setTimeout(function () { el.editText.focus(); el.editText.select(); }, 60);
@@ -916,33 +782,6 @@
     return null;
   }
 
-  function renderGroupChips() {
-    if (!el.editGroupChips) return;
-    el.editGroupChips.innerHTML = '';
-
-    function chip(name, label) {
-      var b = document.createElement('button');
-      b.className = 'g-chip' + (editGroup === name ? ' is-active' : '');
-      b.setAttribute('data-group', name);
-      b.textContent = label;
-      b.addEventListener('click', function () {
-        editGroup = name;
-        renderGroupChips();
-      });
-      el.editGroupChips.appendChild(b);
-    }
-
-    chip('', '未分组');
-    groups.forEach(function (g) { chip(g, g); });
-
-    var add = document.createElement('button');
-    add.className = 'g-chip g-add';
-    add.textContent = '＋';
-    add.title = '新建分组';
-    add.addEventListener('click', createGroup);
-    el.editGroupChips.appendChild(add);
-  }
-
   function saveEdit() {
     var t = findTodo(editingId);
     if (!t) { closeModal(); return; }
@@ -954,13 +793,7 @@
     t.due = el.editDate.value || '';
     t.time = el.editTime.value || '';
     t.repeat = el.editRepeat.value || 'none';
-    t.group = editGroup || '';
     t.note = el.editNote.value.trim();
-
-    if (t.group && groups.indexOf(t.group) < 0) {
-      groups.push(t.group);
-      saveGroups();
-    }
 
     save();
     closeModal();
@@ -1072,7 +905,6 @@
     if (q.time) bits.push(q.time);
     if (q.repeat) bits.push(REPEAT_TEXT[q.repeat]);
     if (q.priority) bits.push('优先级' + PRIO_TEXT[q.priority]);
-    if (q.group) bits.push('#' + q.group);
 
     if (!bits.length) { el.parseHint.hidden = true; return; }
     el.parseHint.textContent = bits.join(' · ');
@@ -1218,7 +1050,6 @@
 
   if (el.menuUpdate) {
     el.menuUpdate.addEventListener('click', function () {
-      el.appMenu.hidden = true;
       if (updateState.hasUpdate) {
         // 已经知道有新版本，直接弹详情，不用再查一遍
         fetchUpdateManifest().then(askToUpdate).catch(function () {
@@ -1231,7 +1062,7 @@
   }
   /* ---------- 备份 / 导入 ---------- */
   function backup() {
-    var payload = JSON.stringify({ version: 2, groups: groups, todos: todos }, null, 2);
+    var payload = JSON.stringify({ version: 3, todos: todos }, null, 2);
     var a = bridge();
     if (a && typeof a.export_backup === 'function') {
       callApi('export_backup', payload).then(function (path) {
@@ -1275,14 +1106,7 @@
       go.then(function (ok) {
         if (!ok) return;
         todos = incoming;
-        if (!Array.isArray(data.groups)) {
-          groups = (groups && groups.length) ? groups : DEFAULT_GROUPS.slice();
-        } else {
-          groups = data.groups.slice();
-        }
-        ensureGroups();
         save();
-        saveGroups();
         render();
         toast('已导入 ' + todos.length + ' 条待办');
       });
@@ -1352,71 +1176,112 @@
       closeDialog(null);
       return;
     }
+    if (e.key === 'Escape' && el.settingsPanel && !el.settingsPanel.hidden) {
+      e.preventDefault();
+      closeSettings();
+      return;
+    }
     if (e.key === 'Escape' && !el.modalMask.hidden) closeModal();
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addTodo(); }
   });
 
   el.clearDoneBtn.addEventListener('click', clearDone);
-  if (el.menuClearDone) el.menuClearDone.addEventListener('click', function () {
-    el.appMenu.hidden = true;
-    clearDone();
-  });
 
-  if (el.btnMenu) {
-    el.btnMenu.addEventListener('click', function (e) {
-      e.stopPropagation();
-      el.appMenu.hidden = !el.appMenu.hidden;
-    });
-  }
-  if (el.menuBackup) el.menuBackup.addEventListener('click', function () {
-    el.appMenu.hidden = true;
-    backup();
-  });
-  if (el.menuRestore) el.menuRestore.addEventListener('click', function () {
-    el.appMenu.hidden = true;
-    restore();
-  });
-
-  /* ---------- 重命名 / 贴边 / 尺寸 ---------- */
-  if (el.menuRename) {
-    el.menuRename.addEventListener('click', function () {
-      el.appMenu.hidden = true;
-      askText('应用名称', winState.app_name || 'xixiの待办', 16).then(function (name) {
-        if (name === null) return;
-        name = String(name).trim().slice(0, 16);
-        if (!name) return;
-        callApi('set_app_name', name).then(function (raw) {
-          var st = parseState(raw);
-          if (st) applyWindowState(st); else applyAppName(name);
-          toast('已重命名为「' + name + '」');
-        });
-      });
-    });
+  /* ---------- 设置页 ---------- */
+  function openSettings() {
+    if (!el.settingsPanel) return;
+    el.settingsPanel.hidden = false;
+    document.body.classList.add('is-settings');
+    renderSettings();
   }
 
-  if (el.menuSnap) {
-    el.menuSnap.addEventListener('click', function () {
+  function closeSettings() {
+    if (!el.settingsPanel) return;
+    el.settingsPanel.hidden = true;
+    document.body.classList.remove('is-settings');
+  }
+
+  function renderSettings() {
+    if (el.setName) el.setName.value = winState.app_name || 'xixiの待办';
+    if (el.setSnap) el.setSnap.classList.toggle('is-on', winState.snap);
+    if (el.setTop) el.setTop.classList.toggle('is-on', winState.on_top);
+    if (el.sizeSeg) {
+      var btns = el.sizeSeg.querySelectorAll('button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('is-active',
+          Number(btns[i].getAttribute('data-preset')) === winState.mini_preset);
+      }
+    }
+    if (el.setCount) el.setCount.textContent = String(todos.length);
+  }
+
+  if (el.btnMenu) el.btnMenu.addEventListener('click', openSettings);
+  if (el.setBack) el.setBack.addEventListener('click', closeSettings);
+
+  function commitName() {
+    var name = String(el.setName.value || '').trim().slice(0, 16);
+    if (!name) { el.setName.value = winState.app_name || ''; return; }
+    callApi('set_app_name', name).then(function (raw) {
+      var st = parseState(raw);
+      if (st) applyWindowState(st); else applyAppName(name);
+      if (el.setName) el.setName.value = winState.app_name;
+      toast('已重命名为「' + winState.app_name + '」');
+    });
+  }
+
+  if (el.setNameSave) el.setNameSave.addEventListener('click', commitName);
+  if (el.setName) {
+    el.setName.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commitName(); }
+    });
+  }
+
+  if (el.setSnap) {
+    el.setSnap.addEventListener('click', function () {
       var next = !winState.snap;
-      el.appMenu.hidden = true;
       callApi('set_snap', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applySnap(st.snap); else applySnap(next);
-        // 刚打开时就近吸一次，用户能立刻看到效果
+        renderSettings();
         if (next) callApi('snap_now');
-        toast(next ? '自动贴边：开（拖到边缘松手即吸附）' : '自动贴边：关');
+        toast(next ? '自动贴边：开' : '自动贴边：关');
       });
     });
   }
 
-  if (el.menuSize) {
-    el.menuSize.addEventListener('click', function () {
-      var next = (winState.mini_preset + 1) % SIZE_NAMES.length;
-      el.appMenu.hidden = true;
-      callApi('set_mini_preset', next).then(function (raw) {
+  if (el.setTop) {
+    el.setTop.addEventListener('click', function () {
+      callApi('toggle_on_top').then(function (raw) {
         var st = parseState(raw);
-        if (st) applyPreset(st.mini_preset === undefined ? next : st.mini_preset);
-        toast('小卡片尺寸：' + presetName(next));
+        if (st) applyOnTop(st.on_top);
+        renderSettings();
+        toast(winState.on_top ? '已置顶' : '已取消置顶');
       });
+    });
+  }
+
+  if (el.sizeSeg) {
+    el.sizeSeg.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-preset]');
+      if (!b) return;
+      var idx = Number(b.getAttribute('data-preset'));
+      callApi('set_mini_preset', idx).then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyPreset(st.mini_preset === undefined ? idx : st.mini_preset);
+        renderSettings();
+        toast('小卡片尺寸：' + presetName(idx));
+      });
+    });
+  }
+
+  if (el.menuBackup) el.menuBackup.addEventListener('click', backup);
+  if (el.menuRestore) el.menuRestore.addEventListener('click', restore);
+  if (el.menuClearDone) {
+    el.menuClearDone.addEventListener('click', function () {
+      var finished = todos.filter(function (t) { return t.done; }).length;
+      if (!finished) { toast('没有已完成的待办'); return; }
+      askConfirm('清除已完成？', '将删除 ' + finished + ' 项已完成的待办，此操作不可撤销。', '清除')
+        .then(function (ok) { if (ok) clearDone(); });
     });
   }
 
@@ -1479,36 +1344,6 @@
     });
   }
 
-  document.addEventListener('click', function (e) {
-    if (el.appMenu && !el.appMenu.hidden) {
-      if (!el.appMenu.contains(e.target) && e.target !== el.btnMenu) {
-        el.appMenu.hidden = true;
-      }
-    }
-    if (el.groupMenu && !el.groupMenu.hidden) {
-      if (!el.groupMenu.contains(e.target) && !el.groupBtn.contains(e.target)) {
-        el.groupMenu.hidden = true;
-        el.groupBtn.classList.remove('is-open');
-      }
-    }
-  });
-
-  if (el.addGroupBtn) el.addGroupBtn.addEventListener('click', createGroup);
-
-  if (el.groupBtn) {
-    el.groupBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (el.groupMenu.hidden) {
-        renderGroupMenu();
-        el.groupMenu.hidden = false;
-        el.groupBtn.classList.add('is-open');
-      } else {
-        el.groupMenu.hidden = true;
-        el.groupBtn.classList.remove('is-open');
-      }
-    });
-  }
-
   /* ---------- 筛选（侧边栏与迷你胶囊共用同一状态） ---------- */
   function syncNavActive() {
     var all = document.querySelectorAll('[data-filter]');
@@ -1526,7 +1361,11 @@
   });
 
   /* ---------- 窗口控制 ---------- */
-  var winState = { mode: 'mini', on_top: true, snap: true, app_name: 'xixiの待办', mini_preset: 1 };
+  var winState = {
+    mode: 'mini', on_top: true, snap: true,
+    app_name: 'xixiの待办', mini_preset: 1,
+    collapsed: false, collapse_edge: ''
+  };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
 
@@ -1557,15 +1396,18 @@
 
   function applySnap(on) {
     winState.snap = !!on;
-    if (el.snapVal) {
-      el.snapVal.textContent = winState.snap ? '开' : '关';
-      el.snapVal.classList.toggle('is-off', !winState.snap);
-    }
+    if (el.setSnap) el.setSnap.classList.toggle('is-on', winState.snap);
   }
 
   function applyPreset(idx) {
     winState.mini_preset = idx;
-    if (el.sizeVal) el.sizeVal.textContent = presetName(idx);
+    if (el.sizeSeg) {
+      var bs = el.sizeSeg.querySelectorAll('button');
+      for (var i = 0; i < bs.length; i++) {
+        bs[i].classList.toggle('is-active',
+          Number(bs[i].getAttribute('data-preset')) === idx);
+      }
+    }
   }
 
   function applyWindowState(st) {
@@ -1575,6 +1417,8 @@
     applySnap(st.snap);
     applyPreset(st.mini_preset === undefined ? 1 : st.mini_preset);
     applyAppName(st.app_name);
+    applyCollapsed(st.collapsed, st.collapse_edge);
+    renderSettings();
   }
 
   function applyMode(mode) {
@@ -1592,6 +1436,30 @@
       el.btnPin.classList.toggle('is-on', winState.on_top);
       el.btnPin.title = winState.on_top ? '取消置顶' : '置顶到最前';
     }
+    if (el.setTop) el.setTop.classList.toggle('is-on', winState.on_top);
+  }
+
+  function applyCollapsed(collapsed, edge) {
+    var on = !!collapsed;
+    winState.collapsed = on;
+    winState.collapse_edge = edge || '';
+    var vertical = on && (edge === 'left' || edge === 'right');
+    var horizontal = on && (edge === 'top' || edge === 'bottom');
+    document.body.classList.toggle('is-collapsed', on);
+    document.body.classList.toggle('collapsed-v', vertical);
+    document.body.classList.toggle('collapsed-h', horizontal);
+    if (el.collapsedMark) el.collapsedMark.hidden = !on;
+    if (on) closeSettings();
+  }
+
+  function expandFromEdge() {
+    if (!winState.collapsed || winState.expanding) return;
+    winState.expanding = true;
+    callApi('expand_window').then(function (raw) {
+      winState.expanding = false;
+      var st = parseState(raw);
+      if (st) applyWindowState(st);
+    });
   }
 
   function initWindowUi() {
@@ -1622,8 +1490,24 @@
   }
 
   if (el.btnMin) {
-    el.btnMin.addEventListener('click', function () { callApi('minimize_window'); });
+    el.btnMin.addEventListener('click', function () {
+      callApi('minimize_window').then(function (raw) {
+        var st = parseState(raw);
+        // 贴近屏幕边缘时后端会收成小条；否则普通最小化，返回空
+        if (st) applyWindowState(st);
+      });
+    });
   }
+
+  if (el.collapsedMark) {
+    el.collapsedMark.addEventListener('click', expandFromEdge);
+  }
+  document.addEventListener('click', function () {
+    if (winState.collapsed) expandFromEdge();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && winState.collapsed) { e.preventDefault(); expandFromEdge(); }
+  });
 
   if (el.btnClose) {
     el.btnClose.addEventListener('click', function () {
@@ -1644,8 +1528,6 @@
     return load().then(function (data) {
       if (mySeq !== bootSeq) return;
       todos = Array.isArray(data.todos) ? data.todos : [];
-      groups = Array.isArray(data.groups) ? data.groups : [];
-      ensureGroups();
       render();
       el.inputText.focus();
     });
@@ -1684,10 +1566,6 @@
   window.__todoApp = {
     get todos() { return todos; },
     set todos(v) { todos = v; },
-    get groups() { return groups; },
-    set groups(v) { groups = v; },
-    get groupFilter() { return groupFilter; },
-    setGroupFilter: setGroupFilter,
     addTodo: addTodo,
     toggle: toggle,
     remove: remove,
@@ -1699,7 +1577,6 @@
     nextDueDate: nextDueDate,
     parseQuickInput: parseQuickInput,
     moveTodo: moveTodo,
-    createGroup: createGroup,
     boot: boot,
     start: start,
     applyMode: applyMode,

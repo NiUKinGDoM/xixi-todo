@@ -55,11 +55,10 @@
     <span class="minibar-count" id="miniCount">0</span>
   </div>
   <div class="minibar-actions">
-    <button class="mb-btn" id="btnMenu" title="更多功能">
-      <svg viewBox="0 0 24 24" fill="none" stroke="none">
-        <circle cx="5.5" cy="12" r="1.35" fill="currentColor"/>
-        <circle cx="12" cy="12" r="1.35" fill="currentColor"/>
-        <circle cx="18.5" cy="12" r="1.35" fill="currentColor"/>
+    <button class="mb-btn" id="btnMenu" title="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.1"/>
+        <path d="M12 3.2l1.5 2.2 2.6-.6.6 2.6 2.2 1.5-1.2 2.4 1.2 2.4-2.2 1.5-.6 2.6-2.6-.6L12 20.8l-1.5-2.2-2.6.6-.6-2.6-2.2-1.5 1.2-2.4-1.2-2.4 2.2-1.5.6-2.6 2.6.6z"/>
       </svg>
     </button>
     <button class="mb-btn" id="btnPin" title="取消置顶">
@@ -87,43 +86,66 @@
   </div>
 </header>
 
-<!-- 更多功能菜单 -->
-<div class="app-menu" id="appMenu" hidden>
-  <button class="am-item" id="menuBackup">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4.5 15v3.5A1.5 1.5 0 006 20h12a1.5 1.5 0 001.5-1.5V15"/></svg>
-    备份导出
-  </button>
-  <button class="am-item" id="menuRestore">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M7.5 11.5L12 16l4.5-4.5"/><path d="M4.5 15v3.5A1.5 1.5 0 006 20h12a1.5 1.5 0 001.5-1.5V15"/></svg>
-    导入恢复
-  </button>
-  <div class="am-sep"></div>
-  <button class="am-item" id="menuRename">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.6l3.9 3.9M4.5 19.5l.9-3.9L16 5a1.8 1.8 0 012.5 0l.5.5a1.8 1.8 0 010 2.5L8.4 18.6l-3.9.9z"/></svg>
-    重命名应用
-  </button>
-  <button class="am-item" id="menuSnap">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-    <span>自动贴边</span>
-    <em class="am-val" id="snapVal">开</em>
-  </button>
-  <button class="am-item" id="menuSize">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M8.5 12h7M12 8.5v7"/></svg>
-    <span>小卡片尺寸</span>
-    <em class="am-val" id="sizeVal">标准</em>
-  </button>
-  <div class="am-sep"></div>
-  <button class="am-item" id="menuUpdate">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 10-2.6 5.9"/><path d="M20 5v6.5h-6.5"/></svg>
-    <span id="updateLabel">检查更新</span>
-  </button>
-  <div class="am-sep"></div>
-  <button class="am-item" id="menuClearDone">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.4A1.4 1.4 0 0110.9 4h2.2a1.4 1.4 0 011.4 1.4V7M6.5 7l.8 12a1.6 1.6 0 001.6 1.5h6.2a1.6 1.6 0 001.6-1.5L17.5 7"/></svg>
-    清除已完成
-  </button>
-  <div class="am-ver" id="appVersion">v—</div>
-</div>
+<!-- ===== 设置页（覆盖整张卡片） ===== -->
+<section class="settings" id="settingsPanel" hidden>
+  <header class="settings-head">
+    <button class="set-back" id="setBack" title="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+    </button>
+    <h2>设置</h2>
+  </header>
+
+  <div class="settings-body">
+    <div class="set-block">
+      <p class="set-label">应用名称</p>
+      <div class="set-inline">
+        <input class="set-input" id="setName" type="text" maxlength="16" autocomplete="off" spellcheck="false">
+        <button class="set-btn" id="setNameSave">保存</button>
+      </div>
+    </div>
+
+    <div class="set-block">
+      <p class="set-label">窗口</p>
+      <div class="set-row">
+        <span class="set-key">自动贴边</span>
+        <button class="switch" id="setSnap" role="switch" aria-checked="true"><i></i></button>
+      </div>
+      <div class="set-row">
+        <span class="set-key">窗口置顶</span>
+        <button class="switch" id="setTop" role="switch" aria-checked="true"><i></i></button>
+      </div>
+      <div class="set-row column">
+        <span class="set-key">小卡片尺寸</span>
+        <div class="set-seg" id="setSize">
+          <button data-preset="0">紧凑</button>
+          <button data-preset="1">标准</button>
+          <button data-preset="2">宽大</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="set-block">
+      <p class="set-label">更新</p>
+      <div class="set-row">
+        <span class="set-key">当前版本</span>
+        <span class="set-val" id="appVersion">v—</span>
+      </div>
+      <button class="set-btn wide" id="menuUpdate"><span id="updateLabel">检查更新</span></button>
+    </div>
+
+    <div class="set-block">
+      <p class="set-label">数据</p>
+      <div class="set-row">
+        <span class="set-key">待办总数</span>
+        <span class="set-val" id="setCount">0</span>
+      </div>
+      <button class="set-btn wide" id="menuBackup">导出备份</button>
+      <button class="set-btn wide" id="menuRestore">导入恢复</button>
+      <button class="set-btn wide danger" id="menuClearDone">清除已完成</button>
+    </div>
+  </div>
+</section>
+
 
 <div class="app">
 
@@ -171,16 +193,6 @@
       </button>
     </nav>
 
-    <div class="group-section">
-      <div class="group-head">
-        <span>分组</span>
-        <button class="mini-add" id="addGroupBtn" title="新建分组">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
-        </button>
-      </div>
-      <div class="group-list" id="groupList"></div>
-    </div>
-
     <div class="progress-card">
       <div class="progress-head">
         <span>完成进度</span>
@@ -204,15 +216,9 @@
       <div class="hero-glow"></div>
       <div class="hero-inner">
         <div class="hero-top">
-          <button class="title-btn" id="groupBtn" title="按分组筛选">
-            <span id="heroTitle">全部待办</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5L12 15l5.5-5.5"/></svg>
-          </button>
+          <h2 id="heroTitle">全部待办</h2>
           <span class="hero-sub" id="heroSub">0 项未完成</span>
         </div>
-
-        <!-- 分组下拉（两种模式共用） -->
-        <div class="group-menu" id="groupMenu" hidden></div>
 
         <!-- 迷你模式的筛选胶囊（完整模式隐藏，与侧边栏共用同一份筛选状态） -->
         <div class="chips" id="filterChips">
@@ -284,6 +290,12 @@
 
 </div><!-- /.card -->
 
+<!-- 收起状态的小把手：点击展开 -->
+<div class="collapsed-mark" id="collapsedMark" hidden>
+  <i></i><i></i><i></i>
+</div>
+
+
 <!-- ===== 编辑弹窗 ===== -->
 <div class="modal-mask" id="modalMask" hidden>
   <div class="modal glass-panel" role="dialog" aria-modal="true" aria-label="编辑待办">
@@ -329,11 +341,6 @@
             <option value="yearly">每年</option>
           </select>
         </label>
-      </div>
-
-      <div class="field">
-        <span class="field-label">分组</span>
-        <div class="group-chips" id="editGroupChips"></div>
       </div>
 
       <label class="field">

@@ -25,7 +25,10 @@ sys.path.insert(0, str(ROOT))
 import tempfile
 os.environ["XIXI_TODO_DATA_DIR"] = tempfile.mkdtemp(prefix="xixi-test-")
 
+import app as appmod  # noqa: E402
 from app import (  # noqa: E402
+    COLLAPSE_LONG,
+    COLLAPSE_THIN,
     FULL_H,
     FULL_W,
     MINI_H,
@@ -258,6 +261,68 @@ def main() -> int:
     check("关闭时记录了当前位置", state3["mini"]["x"] == 777 and state3["mini"]["y"] == 444,
           f"mini={state3['mini']}")
     check("关闭时调用了 destroy", ("destroy",) in win3.calls, str(win3.calls))
+    # ---------- 收进屏幕边缘 ----------
+
+    # 用一个假的屏幕几何，避免依赖真实分辨率
+    class _FakeScr:
+        x, y, width, height = 0, 0, 1920, 1080
+
+    orig_screens = appmod.webview.screens
+    appmod.webview.screens = [_FakeScr()]
+    orig_rect = appmod._window_rect
+    orig_hwnd = appmod._hwnd_of
+
+    api_c = Api(Store(ROOT / "tests" / "win_test_todos.json"), {"window": None}, {
+        "mode": "mini", "on_top": True, "snap": True,
+        "app_name": "t", "mini_preset": 1,
+        "collapsed": False, "collapse_edge": "",
+        "mini": {"x": None, "y": None, "w": 380, "h": 560},
+        "full": {"x": None, "y": None, "w": 1080, "h": 720},
+    })
+
+    def fake_geom(rect_tuple):
+        appmod._window_rect = lambda hwnd: rect_tuple
+        appmod._hwnd_of = lambda win: 1234
+
+    fake_geom((1540, 300, 380, 560))          # 右缘正好贴屏
+    check("识别出贴近右边缘", api_c._nearest_edge(object()) == "right",
+          str(api_c._nearest_edge(object())))
+
+    fake_geom((4, 300, 380, 560))             # 贴左
+    check("识别出贴近左边缘", api_c._nearest_edge(object()) == "left")
+
+    fake_geom((700, 240, 380, 560))           # 四边都不靠
+    check("远离边缘时不吸附", api_c._nearest_edge(object()) is None,
+          str(api_c._nearest_edge(object())))
+
+    fake_geom((700, 2, 380, 560))             # 贴上
+    check("识别出贴近上边缘", api_c._nearest_edge(object()) == "top")
+
+    fake_geom((700, 520, 380, 560))           # 下缘 1080
+    check("识别出贴近下边缘", api_c._nearest_edge(object()) == "bottom")
+
+    # 收起尺寸：竖向/横向薄条
+    check("薄条长宽符合设计", COLLAPSE_THIN == 20 and COLLAPSE_LONG == 104,
+          f"{COLLAPSE_THIN}x{COLLAPSE_LONG}")
+
+    # 状态里带上收起字段
+    st = json.loads(api_c.get_window_state())
+    check("状态包含 collapsed", "collapsed" in st and st["collapsed"] is False, str(st)[:80])
+    check("状态包含 collapse_edge", st.get("collapse_edge") == "", str(st)[:80])
+
+    # 收起时快照不写入尺寸（否则会把小条尺寸当成卡片尺寸）
+    api_c.state["collapsed"] = True
+    api_c.state["mini"] = {"x": 1, "y": 2, "w": 380, "h": 560}
+    api_c._snapshot("mini")
+    check("收起状态下快照不改尺寸",
+          api_c.state["mini"]["w"] == 380 and api_c.state["mini"]["h"] == 560,
+          str(api_c.state["mini"]))
+    api_c.state["collapsed"] = False
+
+    appmod._window_rect = orig_rect
+    appmod._hwnd_of = orig_hwnd
+    appmod.webview.screens = orig_screens
+
     check("关闭时已落盘", STATE_FILE.exists())
 
     print("\n===== 窗口形态逻辑测试 =====")

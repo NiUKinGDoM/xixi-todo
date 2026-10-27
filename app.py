@@ -84,7 +84,6 @@ def _migrate_old_data(old: Path, new: Path) -> None:
 
 
 DATA_FILE = _data_dir() / "todos.json"
-GROUPS_FILE = _data_dir() / "groups.json"
 NOTIFIED_FILE = _data_dir() / "notified.json"
 STATE_FILE = _data_dir() / "window.json"
 LOG_FILE = _data_dir() / "app.log"
@@ -103,6 +102,9 @@ MINI_PRESETS = [
 
 # 拖动窗口后距离屏幕边缘多少像素内自动吸附
 EDGE_SNAP_PX = 30
+
+# 收进屏幕边缘时的小条尺寸（薄边 × 长边）
+COLLAPSE_THIN, COLLAPSE_LONG = 20, 104
 
 
 def _log(msg: str) -> None:
@@ -169,6 +171,8 @@ DEFAULT_STATE = {
     "snap": True,
     "app_name": DEFAULT_APP_NAME,
     "mini_preset": 1,
+    "collapsed": False,
+    "collapse_edge": "",
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -181,6 +185,8 @@ def load_state() -> dict:
         "snap": DEFAULT_STATE["snap"],
         "app_name": DEFAULT_STATE["app_name"],
         "mini_preset": DEFAULT_STATE["mini_preset"],
+        "collapsed": False,
+        "collapse_edge": "",
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
@@ -466,10 +472,8 @@ class Api:
         store: Store,
         window_holder: dict,
         state: dict | None = None,
-        groups_store: JsonList | None = None,
     ) -> None:
         self.store = store
-        self.groups_store = groups_store or JsonList(GROUPS_FILE)
         self.window_holder = window_holder
         self.state = state if state is not None else load_state()
 
@@ -489,21 +493,6 @@ class Api:
         if not isinstance(items, list):
             return False
         return self.store.save(items)
-
-    def load_groups(self) -> str:
-        return json.dumps(self.groups_store.load(), ensure_ascii=False)
-
-    def save_groups(self, payload: str) -> bool:
-        try:
-            items = json.loads(payload)
-        except Exception as exc:
-            _log(f"save_groups parse failed: {exc}")
-            return False
-        if not isinstance(items, list):
-            return False
-        # 只保留非空字符串
-        clean = [str(x).strip()[:12] for x in items if str(x).strip()]
-        return self.groups_store.save(clean)
 
     def notify(self, title: str, message: str) -> bool:
         """触发一条系统通知（用于到期提醒）。"""
@@ -583,7 +572,13 @@ class Api:
         return self.window_holder.get("window")
 
     def _snapshot(self, mode: str) -> None:
-        """把当前窗口位置（迷你模式还含尺寸）记到指定模式下。"""
+        """把当前窗口位置（迷你模式还含尺寸）记到指定模式下。
+
+        收起状态下窗口是贴边的小条，尺寸不代表卡片，必须跳过，
+        否则退出时会把 20x104 记成卡片尺寸。
+        """
+        if self.state.get("collapsed"):
+            return
         win = self._win()
         if win is None:
             return
@@ -609,6 +604,8 @@ class Api:
                 "snap": bool(self.state.get("snap", True)),
                 "app_name": self.state.get("app_name") or DEFAULT_APP_NAME,
                 "mini_preset": int(self.state.get("mini_preset", 1)),
+                "collapsed": bool(self.state.get("collapsed", False)),
+                "collapse_edge": self.state.get("collapse_edge", ""),
             },
             ensure_ascii=False,
         )
@@ -811,15 +808,129 @@ class Api:
         save_state(self.state)
         return self.get_window_state()
 
-    def minimize_window(self) -> bool:
+    def minimize_window(self):
+        """最小化。若窗口贴着屏幕边缘，则收成一条贴边小条（而不是缩到任务栏）。"""
         win = self._win()
+        if win is None:
+            return ""
+        edge = self._nearest_edge(win)
+        if edge and bool(self.state.get("snap", True)):
+            return self.collapse_window(edge)
         try:
-            if win is not None:
-                win.minimize()
-            return True
+            win.minimize()
         except Exception as exc:
             _log(f"minimize failed: {exc}")
-            return False
+        return ""
+
+    # ---------- 收进屏幕边缘 ----------
+
+    def _nearest_edge(self, win) -> str | None:
+        """窗口离哪条屏幕边最近（在吸附阈值内才算）。"""
+        try:
+            hwnd = _hwnd_of(win)
+            if not hwnd:
+                return None
+            x, y, w, h = _window_rect(hwnd)
+            scr = webview.screens[0]
+            sx, sy = int(scr.x), int(scr.y)
+            sw, sh = int(scr.width), int(scr.height)
+            gaps = {
+                "left": abs(x - sx),
+                "right": abs(sx + sw - (x + w)),
+                "top": abs(y - sy),
+                "bottom": abs(sy + sh - (y + h)),
+            }
+            edge = min(gaps, key=gaps.get)
+            return edge if gaps[edge] <= EDGE_SNAP_PX else None
+        except Exception as exc:
+            _log(f"nearest edge failed: {exc}")
+            return None
+
+    def collapse_window(self, edge: str) -> str:
+        win = self._win()
+        if win is None or self.state.get("collapsed"):
+            return self.get_window_state()
+
+        try:
+            hwnd = _hwnd_of(win)
+            x, y, w, h = _window_rect(hwnd)
+        except Exception:
+            return self.get_window_state()
+
+        # 记住展开时要回到哪儿
+        slot = self.state.setdefault("mini", {})
+        slot["x"], slot["y"], slot["w"], slot["h"] = x, y, w, h
+
+        if edge in ("left", "right"):
+            nw, nh = COLLAPSE_THIN, COLLAPSE_LONG
+        else:
+            nw, nh = COLLAPSE_LONG, COLLAPSE_THIN
+
+        scr = webview.screens[0]
+        sx, sy = int(scr.x), int(scr.y)
+        sw, sh = int(scr.width), int(scr.height)
+
+        if edge == "left":
+            nx = sx
+            ny = y + h // 2 - nh // 2
+        elif edge == "right":
+            nx = sx + sw - nw
+            ny = y + h // 2 - nh // 2
+        elif edge == "top":
+            ny = sy
+            nx = x + w // 2 - nw // 2
+        else:  # bottom
+            ny = sy + sh - nh
+            nx = x + w // 2 - nw // 2
+
+        # margin=0：收进边缘就要贴死在边上，不能留 8px 缝
+        nx, ny = clamp_to_screen(nx, ny, nw, nh, margin=0)
+
+        self.state["collapsed"] = True
+        self.state["collapse_edge"] = edge
+
+        try:
+            win.resize(nw, nh)
+        except Exception as exc:
+            _log(f"collapse resize failed: {exc}")
+        try:
+            win.move(nx, ny)
+        except Exception as exc:
+            _log(f"collapse move failed: {exc}")
+        shape_window(win, 10)
+
+        save_state(self.state)
+        _log(f"collapsed to {edge} ({nx},{ny} {nw}x{nh})")
+        return self.get_window_state()
+
+    def expand_window(self) -> str:
+        win = self._win()
+        if win is None or not self.state.get("collapsed"):
+            return self.get_window_state()
+
+        slot = self.state.get("mini") or {}
+        w = int(slot.get("w") or MINI_PRESETS[self.state.get("mini_preset", 1)][0])
+        h = int(slot.get("h") or MINI_PRESETS[self.state.get("mini_preset", 1)][1])
+
+        self.state["collapsed"] = False
+        self.state["collapse_edge"] = ""
+
+        try:
+            win.resize(w, h)
+        except Exception as exc:
+            _log(f"expand resize failed: {exc}")
+        try:
+            x = int(slot.get("x")) if slot.get("x") is not None else int(win.x)
+            y = int(slot.get("y")) if slot.get("y") is not None else int(win.y)
+            tx, ty = clamp_to_screen(x, y, w, h)
+            win.move(tx, ty)
+        except Exception as exc:
+            _log(f"expand move failed: {exc}")
+        shape_window(win, 22)
+
+        save_state(self.state)
+        _log("expanded from edge")
+        return self.get_window_state()
 
     def close_window(self) -> None:
         self._snapshot(self.state.get("mode", "mini"))
@@ -987,10 +1098,9 @@ def main() -> None:
         sys.exit(1)
 
     store = Store(DATA_FILE)
-    groups_store = JsonList(GROUPS_FILE)
     state = load_state()
     holder: dict = {}
-    api = Api(store, holder, state, groups_store)
+    api = Api(store, holder, state)
 
     # 必须传普通文件路径（而非 file:// URI）：
     # pywebview 的 is_local_url() 对 file:// 返回 False，
@@ -1018,7 +1128,11 @@ def main() -> None:
         js_api=api,
         width=width,
         height=height,
-        min_size=MINI_MIN,
+        # 故意不设 min_size：收起成 20px 小条时，
+        # 把 WinForms 的 MinimumSize 调大/调小会触发跨线程 Invoke，
+        # 而 js_api 回调本身在非 UI 线程，会直接死锁。
+        # 最小尺寸由 resize_window / 前端手柄自己钳制。
+        min_size=(1, 1),
         # 无边框 + 透明：窗口本身不画背景，圆角与阴影全部由页面绘制，
         # 这样迷你卡片才能真正像浮在桌面上的一块玻璃。
         frameless=True,
@@ -1093,7 +1207,7 @@ def main() -> None:
             snap_busy["v"] = False
 
     def on_moved(_x, _y) -> None:
-        if not state.get("snap", True) or snap_busy["v"]:
+        if state.get("collapsed") or not state.get("snap", True) or snap_busy["v"]:
             return
         old = snap_timer.get("t")
         if old is not None:

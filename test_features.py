@@ -1,4 +1,4 @@
-"""新增功能的后端逻辑测试：分组存储、备份导出/导入、提醒判定。
+"""新增功能的后端逻辑测试：文件存储、备份导出/导入、提醒判定。
 
 不需要真实 GUI：文件对话框用假窗口对象返回临时路径，
 这样能真正验证「写入文件 / 读回文件」这条链路。
@@ -44,44 +44,33 @@ class FakeWindow:
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="todo-test-"))
     todos_path = tmp / "todos.json"
-    groups_path = tmp / "groups.json"
 
     store = Store(todos_path)
-    groups_store = JsonList(groups_path)
 
-    # ---------- JsonList 基础 ----------
-    check("分组文件初始为空", groups_store.load() == [])
-    check("分组写入成功", groups_store.save(["工作", "生活"]))
-    check("分组读回一致", groups_store.load() == ["工作", "生活"])
+    # ---------- JsonList 基础（提醒记录用的就是这个容器） ----------
+    side_path = tmp / "side.json"
+    side_store = JsonList(side_path)
+    check("文件初始为空", side_store.load() == [])
+    check("写入成功", side_store.save(["a", "b"]))
+    check("读回一致", side_store.load() == ["a", "b"])
 
-    groups_path.write_text("{坏掉的", encoding="utf-8")
-    check("分组文件损坏时不崩溃", groups_store.load() == [])
-    check("分组损坏文件被备份", any(tmp.glob("groups.json.corrupt")))
+    side_path.write_text("{坏掉的", encoding="utf-8")
+    check("文件损坏时不崩溃", side_store.load() == [])
+    check("损坏文件被备份", any(tmp.glob("side.json.corrupt")))
 
-    # ---------- Api 分组读写 ----------
-    groups_store = JsonList(groups_path)
     api = Api(store, {"window": None}, {
         "mode": "mini", "on_top": True,
         "mini": {"x": None, "y": None, "w": 380, "h": 560},
         "full": {"x": None, "y": None, "w": 1080, "h": 720},
-    }, groups_store)
-
-    api.save_groups(json.dumps(["工作", "  ", "生活", "", "学习"], ensure_ascii=False))
-    check("空分组被过滤", json.loads(api.load_groups()) == ["工作", "生活", "学习"],
-          api.load_groups())
-    api.save_groups(json.dumps([1, 2, 3]))
-    check("非字符串分组被转成字符串", json.loads(api.load_groups()) == ["1", "2", "3"],
-          api.load_groups())
-    api.save_groups("这不是数组")
-    check("非法 JSON 不覆盖已有分组", json.loads(api.load_groups()) == ["1", "2", "3"],
-          api.load_groups())
+    })
+    check("分组接口已移除", not hasattr(api, "save_groups") and not hasattr(api, "load_groups"))
 
     # ---------- 备份导出 ----------
     backup_file = tmp / "backup.json"
-    payload = json.dumps({"version": 2, "groups": ["工作"], "todos": [{"id": "b1", "title": "备份任务"}]},
+    payload = json.dumps({"version": 3, "todos": [{"id": "b1", "title": "备份任务"}]},
                          ensure_ascii=False)
     win = FakeWindow(dialog_result=[str(backup_file)])
-    api2 = Api(store, {"window": win}, None, groups_store)
+    api2 = Api(store, {"window": win}, None)
     result = api2.export_backup(payload)
 
     check("导出返回了路径", bool(result), result)
@@ -94,28 +83,28 @@ def main() -> int:
 
     # 取消对话框
     win_cancel = FakeWindow(dialog_result=None)
-    api3 = Api(store, {"window": win_cancel}, None, groups_store)
+    api3 = Api(store, {"window": win_cancel}, None)
     check("取消导出返回空串", api3.export_backup(payload) == "")
 
     # ---------- 备份导入 ----------
     win_open = FakeWindow(dialog_result=[str(backup_file)])
-    api4 = Api(store, {"window": win_open}, None, groups_store)
+    api4 = Api(store, {"window": win_open}, None)
     text = api4.import_backup()
     check("导入读回文件内容", "备份任务" in text, text[:60])
     check("导入时传入了 open 类型对话框", win_open.calls and win_open.calls[0][0] == 10,
           str(win_open.calls[0][0]) if win_open.calls else "无调用")
 
     win_open_cancel = FakeWindow(dialog_result=None)
-    api5 = Api(store, {"window": win_open_cancel}, None, groups_store)
+    api5 = Api(store, {"window": win_open_cancel}, None)
     check("取消导入返回空串", api5.import_backup() == "")
 
     # 文件不存在时不抛异常
     win_missing = FakeWindow(dialog_result=[str(tmp / "不存在.json")])
-    api6 = Api(store, {"window": win_missing}, None, groups_store)
+    api6 = Api(store, {"window": win_missing}, None)
     check("导入不存在的文件不抛异常", api6.import_backup() == "")
 
     # 无窗口对象时不抛异常
-    api7 = Api(store, {"window": None}, None, groups_store)
+    api7 = Api(store, {"window": None}, None)
     check("无窗口时导出返回空串", api7.export_backup(payload) == "")
     check("无窗口时导入返回空串", api7.import_backup() == "")
 
@@ -123,7 +112,7 @@ def main() -> int:
     rich = [{
         "id": "r1", "title": "带全部字段", "priority": "high",
         "due": "2026-11-01", "time": "09:30", "repeat": "weekly",
-        "group": "工作", "note": "备注内容", "done": False,
+        "note": "备注内容", "done": False,
         "createdAt": 123, "order": 10, "doneCount": 3,
     }]
     api.save_todos(json.dumps(rich, ensure_ascii=False))
