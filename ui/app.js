@@ -1078,7 +1078,14 @@
     updateState.checking = true;
     if (!silent && el.updateLabel) el.updateLabel.textContent = '检查中…';
 
-    return fetchUpdateManifest().then(function (data) {
+    // 没拿到本地版本号就先补取。否则空版本会和任何远端版本比较，
+    // 导致「明明是最新版却提示有新版本」的误报。
+    var ready = currentVersion ? Promise.resolve() : initVersion();
+
+    return ready.then(function () {
+      if (!currentVersion) throw new Error('local version unknown');
+      return fetchUpdateManifest();
+    }).then(function (data) {
       updateState.checking = false;
       updateState.latest = String(data.version);
       var newer = compareVer(data.version, currentVersion) > 0;
@@ -1117,9 +1124,12 @@
   }
 
   function initVersion() {
-    callApi('get_version').then(function (v) {
-      currentVersion = String(v || '');
-      if (el.appVersion) el.appVersion.textContent = 'v' + currentVersion;
+    return callApi('get_version').then(function (v) {
+      if (v) {
+        currentVersion = String(v);
+        if (el.appVersion) el.appVersion.textContent = 'v' + currentVersion;
+      }
+      return currentVersion;
     });
   }
 
@@ -1427,8 +1437,10 @@
       if (a && typeof a.load_todos === 'function') {
         clearInterval(timer);
         boot();
-        // 启动后延迟几秒静默检查更新，避免抢占首屏
-        setTimeout(function () { checkUpdate(true); }, 4000);
+        // 先拿到本地版本号，再延迟静默检查更新，避免误报
+        initVersion().then(function () {
+          setTimeout(function () { checkUpdate(true); }, 3000);
+        });
       } else if (tries > 40) {
         clearInterval(timer);
       }

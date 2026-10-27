@@ -105,12 +105,19 @@ Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉�
 
 | 顺序 | 源 | 说明 |
 |---|---|---|
-| 1 | `cdn.jsdelivr.net/gh/...` | 国内访问相对稳定，推荐 |
-| 2 | `gh-proxy.com` | GitHub 加速镜像 |
-| 3 | `ghfast.top` | 备用镜像 |
-| 4 | `raw.githubusercontent.com` | GitHub 直连 |
+| 1 | `raw.githubusercontent.com` | 永远是最新的，保证发版后立刻生效 |
+| 2 | `cdn.jsdelivr.net/gh/...` | 国内快，但对 `@main` 有最长 12 小时缓存 |
+| 3 | `gh-proxy.com` | GitHub 加速镜像 |
+| 4 | `ghfast.top` | 备用镜像 |
 
-全部失败只会提示「检查失败，请检查网络」，不会影响正常使用。
+**下载链接**（`version.json` 里的 `downloads`）用的是另一套顺序，因为实测发现：
+
+- jsDelivr 出于安全策略**不代理 exe**（返回 403）
+- GitHub raw 对大文件在国内常返回 502
+
+所以下载走 `gh-proxy` → `ghfast` → GitHub 页面，这三个都实测可用。
+
+全部源都失败只会提示「检查失败，请检查网络」，不影响正常使用。
 
 ### 发新版本的步骤
 
@@ -129,6 +136,9 @@ git push
 
 > 注意：`version.json` 里的下载链接指向 `dist/xixi-todo.exe`（英文别名）。
 > 用英文名而不是中文名，是为了让镜像服务对 URL 的转义不会出问题。
+
+> 如果改完 12 小时内发现用户没收到更新，可以手动清一下 jsDelivr 缓存：
+> `curl "https://purge.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json"`
 
 ---
 
