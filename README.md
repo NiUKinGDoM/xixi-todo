@@ -126,26 +126,42 @@ Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉�
 
 全部源都失败只会提示「检查失败，请检查网络」，不影响正常使用。
 
-### 发新版本的步骤
+### 发新版本的步骤（每次改完必须走完）
 
-1. 改 `app.py` 里的 `VERSION`
+**版本号不升 = 老用户永远收不到更新**，这一步最容易漏。
+
+1. 改 `app.py` 的 `VERSION`（如 `1.2.0` → `1.2.1`）
 2. 改 `version.json` 的 `version`、`date`、`notes`
-3. `python build.py` 重新打包
-4. 提交并推送：
+3. `python build.py` 重新打包（会把新版本号打进 exe）
+4. 跑一遍全部测试：`run_tests.bat` 或手动跑四个脚本
+5. 提交并推送，**exe 跟着一起进仓库**：
 
 ```bash
-git add -A
-git commit -m "release: v1.1.1"
+git add -A          # dist/ 下的 exe 是跟踪的，会一起提交
+git commit -m "release: v1.2.1"
 git push
+```
+
+6. 清 jsDelivr 缓存（它对 `@main` 有最长 12 小时缓存，不清的话部分用户会读到旧清单）：
+
+```bash
+curl "https://purge.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json"
+```
+
+7. 复核：确认远程已经是新版本
+
+```bash
+curl -s "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json" | head -3
 ```
 
 推上去后，已经装了旧版的用户在下次打开时就会收到更新提示。
 
 > 注意：`version.json` 里的下载链接指向 `dist/xixi-todo.exe`（英文别名）。
 > 用英文名而不是中文名，是为了让镜像服务对 URL 的转义不会出问题。
-
-> 如果改完 12 小时内发现用户没收到更新，可以手动清一下 jsDelivr 缓存：
-> `curl "https://purge.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json"`
+>
+> exe 是**直接提交进仓库**的（不是发 Releases），这样 raw / jsDelivr / gh-proxy
+> 三条更新链路都能直接取到二进制，用户点「去下载」即可。
+> 代价是每次发版仓库会多约 13 MB（Git 只存增量，实际增长远小于此）。
 
 ---
 
