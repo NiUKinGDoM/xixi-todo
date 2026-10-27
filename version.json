@@ -3,8 +3,8 @@
   "date": "2026-10-27",
   "notes": "首个公开版本：重复任务、分组、提醒时间、任务备注、快速添加语法、拖拽排序、备份恢复、桌面小卡片形态",
   "downloads": {
-    "github": "https://github.com/NiUKinGDoM/xixi-todo/raw/main/dist/xixi-todo.exe",
-    "jsdelivr": "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/dist/xixi-todo.exe",
-    "ghproxy": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi-todo.exe"
+    "ghproxy": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi-todo.exe",
+    "ghfast": "https://ghfast.top/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi-todo.exe",
+    "github": "https://github.com/NiUKinGDoM/xixi-todo/raw/main/dist/xixi-todo.exe"
   }
 }

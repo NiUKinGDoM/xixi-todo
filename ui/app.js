@@ -1107,7 +1107,8 @@
               '\n\n是否打开下载页面？';
     if (window.confirm(msg)) {
       var dl = data.downloads || {};
-      var url = dl.jsdelivr || dl.ghproxy || dl.github ||
+      // 优先用实测可用的加速镜像（jsDelivr 不代理 exe，GitHub raw 大文件常被拦）
+      var url = dl.ghproxy || dl.ghfast || dl.github || dl.jsdelivr ||
                 ('https://github.com/' + REPO + '/releases/latest');
       callApi('open_url', url);
     }
