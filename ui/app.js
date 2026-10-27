@@ -1513,6 +1513,9 @@
   function expandFromEdge() {
     if (!winState.collapsed || winState.expanding) return;
     winState.expanding = true;
+    // 先同步置位：不要在等后端返回的这段时间里，
+    // 让冒泡上来的 click 再触发一次展开
+    winState.collapsed = false;
     callApi('expand_window').then(function (raw) {
       winState.expanding = false;
       var st = parseState(raw);
