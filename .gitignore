@@ -15,6 +15,7 @@ dist/待办事项.exe
 
 # 测试临时产物
 tests/test.html
+tests/upd.html
 tests/prev_*.html
 tests/frame_mini.html
 tests/frame.html
