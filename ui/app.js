@@ -93,8 +93,8 @@
     setNameSave: $('setNameSave'),
     setSnap: $('setSnap'),
     setTop: $('setTop'),
-    setOpacity: $('setOpacity'),
-    opacityVal: $('opacityVal'),
+    setCardAlpha: $('setCardAlpha'),
+    alphaVal: $('alphaVal'),
     sizeSeg: $('setSize'),
     setCount: $('setCount'),
     collapsedMark: $('collapsedMark'),
@@ -1490,22 +1490,27 @@
       }
     }
     if (el.setAutoStart) el.setAutoStart.classList.toggle('is-on', winState.autostart);
-    if (el.setOpacity) {
-    // 拖动时高频调用，70ms 节流；松手再补一次确保落盘
-    var opacityTimer = null;
-    el.setOpacity.addEventListener('input', function () {
-      var v = Number(el.setOpacity.value) || 0;
-      winState.opacity = v;
-      if (el.opacityVal) el.opacityVal.textContent = v + '%';
-      if (opacityTimer) return;
-      opacityTimer = setTimeout(function () {
-        opacityTimer = null;
-        callApi('set_opacity', String(el.setOpacity.value));
+    if (el.setCardAlpha) {
+    // 纯 CSS 变量，实时生效；70ms 节流避免高频调后端
+    var alphaTimer = null;
+    var applyCardAlpha = function (v) {
+      winState.card_alpha = v;
+      document.documentElement.style.setProperty('--card-alpha', String(v / 100));
+      if (el.alphaVal) el.alphaVal.textContent = v + '%';
+    };
+    el.setCardAlpha.addEventListener('input', function () {
+      var v = Number(el.setCardAlpha.value) || 0;
+      applyCardAlpha(v);
+      if (alphaTimer) return;
+      alphaTimer = setTimeout(function () {
+        alphaTimer = null;
+        callApi('set_card_alpha', String(el.setCardAlpha.value));
       }, 70);
     });
-    el.setOpacity.addEventListener('change', function () {
-      callApi('set_opacity', String(el.setOpacity.value));
+    el.setCardAlpha.addEventListener('change', function () {
+      callApi('set_card_alpha', String(el.setCardAlpha.value));
     });
+    applyCardAlpha(winState.card_alpha);
   }
 
   if (el.sizeSeg) {
@@ -1515,8 +1520,9 @@
           Number(btns[i].getAttribute('data-preset')) === winState.mini_preset);
       }
     }
-    if (el.setOpacity) el.setOpacity.value = String(winState.opacity);
-    if (el.opacityVal) el.opacityVal.textContent = String(winState.opacity) + '%';
+    if (el.setCardAlpha) el.setCardAlpha.value = String(winState.card_alpha);
+    if (el.alphaVal) el.alphaVal.textContent = String(winState.card_alpha) + '%';
+    document.documentElement.style.setProperty('--card-alpha', String((winState.card_alpha || 0) / 100));
     if (el.setCount) el.setCount.textContent = String(todos.length);
   }
 
@@ -1812,7 +1818,7 @@
     app_name: 'xixiの待办', mini_preset: 1,
     collapsed: false, collapse_edge: '',
     collapse_min: true, auto_collapse: false,
-    close_action: 'quit', autostart: false, opacity: 100
+    close_action: 'quit', autostart: false, card_alpha: 100
   };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
@@ -1868,7 +1874,7 @@
     if (typeof st.auto_collapse === 'boolean') winState.auto_collapse = st.auto_collapse;
     if (typeof st.close_action === 'string') winState.close_action = st.close_action;
     if (typeof st.autostart === 'boolean') winState.autostart = st.autostart;
-    if (typeof st.opacity === 'number') winState.opacity = st.opacity;
+    if (typeof st.card_alpha === 'number') winState.card_alpha = st.card_alpha;
 
     applyMode(st.mode === 'full' ? 'full' : 'mini');
     applyOnTop(st.on_top);

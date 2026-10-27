@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>xixiの待办清单</title>
-<link rel="stylesheet" href="styles.css?v=160">
+<link rel="stylesheet" href="styles.css?v=161">
 </head>
 <body class="mode-mini">
 
@@ -129,11 +129,11 @@
         <div class="set-row column">
           <div class="set-row-head">
             <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 3.8v16.4"/><path d="M12 3.8a8.2 8.2 0 010 16.4" fill="currentColor" stroke="none" opacity=".28"/></svg></span>
-            <span class="set-text"><b>整卡透明度</b><small>0% 全透明，100% 全实（文字会一起变淡）</small></span>
-            <span class="set-val" id="opacityVal">100%</span>
+            <span class="set-text"><b>卡片底色浓度</b><small>100% 纯白，0% 底色消失（文字始终清晰）</small></span>
+            <span class="set-val" id="alphaVal">100%</span>
           </div>
-          <input class="opacity-range" id="setOpacity" type="range" min="0" max="100" step="1" value="100"
-                 aria-label="小卡片透明度">
+          <input class="opacity-range" id="setCardAlpha" type="range" min="0" max="100" step="1" value="100"
+                 aria-label="卡片底色浓度">
         </div>
       </div>
     </section>
@@ -501,6 +501,6 @@
 <!-- ===== 轻提示 ===== -->
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=160"></script>
+<script src="app.js?v=161"></script>
 </body>
 </html>

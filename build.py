@@ -1,13 +1,15 @@
 """PyInstaller 打包：产出安装包的 payload（不直接发布）。
 
-应用只以安装包形式分发，所以这里只生成一个中间产物，
-由 build_installer.py 打进 setup.exe。dist 里只留安装包，
-避免用户误点「免安装版」。
+用 --onedir 而不是 --onefile：
+- onefile 每次启动都要把 12MB 解压到临时目录，任务管理器里会看到
+  两个同名进程（外层引导器 + 内层真身），用户会以为程序开了两份
+- onedir 只有一个进程，启动也快得多
+- 反正我们只发安装包，多出来的依赖文件都在安装目录里，用户看不到
 
 用法：
     .venv\\Scripts\\python.exe build.py
 产物：
-    build\\payload\\xixi-todo.exe（供安装包打包，不进仓库）
+    build\\payload\\xixi-todo\\（目录，供安装包打包，不进仓库）
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ def main() -> int:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--name",
         PAYLOAD_NAME,
@@ -69,10 +71,12 @@ def main() -> int:
         print("打包失败")
         return result.returncode
 
-    exe = PAYLOAD_DIR / f"{PAYLOAD_NAME}.exe"
+    app_dir = PAYLOAD_DIR / PAYLOAD_NAME
+    exe = app_dir / f"{PAYLOAD_NAME}.exe"
     if exe.exists():
-        size_mb = exe.stat().st_size / 1024 / 1024
-        print(f"\npayload：{exe}  ({size_mb:.1f} MB)")
+        total = sum(f.stat().st_size for f in app_dir.rglob("*") if f.is_file())
+        print(f"\npayload：{app_dir}  (exe {exe.stat().st_size/1024/1024:.1f} MB，"
+              f"整目录 {total/1024/1024:.1f} MB)")
         print("下一步：python build_installer.py（生成 dist 下的安装包）")
     else:
         print("\n未找到产物")

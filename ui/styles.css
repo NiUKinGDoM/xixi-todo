@@ -2589,3 +2589,73 @@ input[type="time"].is-empty::-webkit-datetime-edit-fields-wrapper {
 
 /* 置顶的条目左侧加一条强调竖线，列表里一眼能认出来 */
 .todo-item.is-pinned { border-left: 3px solid var(--accent); padding-left: 7px; }
+
+
+/* ============================================================
+   条目操作按钮：不占内容宽度，悬停才浮现
+   原来三个按钮（置顶/编辑/删除）在 flex 里吃掉 100 多像素，
+   小卡片里标题被挤成一两个字。现在改成绝对定位浮在右侧，
+   平时完全不占位，鼠标移到这一行才淡入。
+   左侧加一层从左透明的渐变，压在上面的文字自然淡出，不显生硬。
+   ============================================================ */
+.todo-item { position: relative; }
+
+.todo-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 2px 2px 2px 26px;
+  border-radius: 9px;
+  background: linear-gradient(to right,
+    rgba(255, 255, 255, 0) 0%,
+    var(--surface) 34%,
+    var(--surface) 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s var(--ease);
+}
+.todo-item:hover .todo-actions,
+.todo-item:focus-within .todo-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 悬停背景色变亮，渐变底色要跟上，否则会露出一块白 */
+.todo-item:hover .todo-actions { background: linear-gradient(to right,
+    rgba(255, 255, 255, 0) 0%, #ffffff 34%, #ffffff 100%); }
+
+/* 触摸设备没有 hover，退回常显 + 静态占位 */
+@media (hover: none) {
+  .todo-actions {
+    position: static;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    background: none;
+    padding-left: 4px;
+  }
+}
+
+/* 正文现在可以铺满整行，标题不再被按钮挤窄 */
+.todo-main { flex: 1; min-width: 0; }
+
+/* ============================================================
+   卡片底色浓度
+   --card-alpha 由设置里的滑块实时改（0 = 底色消失，1 = 纯白）。
+   只作用于小卡片的「底」，条目、输入框、胶囊保持白色，
+   所以文字对比度永远够。
+   ============================================================ */
+:root { --card-alpha: 1; }
+
+body.mode-mini {
+  --card-bg: rgba(255, 255, 255, var(--card-alpha));
+}
+body.mode-mini .card,
+body.mode-mini .minibar,
+body.mode-mini .mini-foot,
+body.mode-mini .hero {
+  background: var(--card-bg);
+}

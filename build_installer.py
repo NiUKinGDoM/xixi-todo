@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 INSTALLER_DIR = ROOT / "installer"
-APP_SRC = ROOT / "build" / "payload" / "xixi-todo.exe"
+APP_SRC_DIR = ROOT / "build" / "payload" / "xixi-todo"
+APP_SRC = APP_SRC_DIR / "xixi-todo.exe"
 ICON = ROOT / "ui" / "app.ico"
 VERSION_JSON = ROOT / "version.json"
 
@@ -80,7 +81,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Name: "autostart"; Description: "开机自动启动（打开即是待办小卡片）"; GroupDescription: "启动："; Flags: checkedonce
 
 [Files]
-Source: "{app_src}"; DestDir: "{{app}}"; DestName: "xixi-todo.exe"; Flags: ignoreversion
+Source: "{app_src}\\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{{autoprograms}}\{app_name}"; Filename: "{{app}}\xixi-todo.exe"; Comment: "桌面待办小卡片"
@@ -125,7 +126,7 @@ def read_version() -> str:
 
 def main() -> int:
     if not APP_SRC.exists():
-        print("缺少 build/payload/xixi-todo.exe，请先执行: python build.py")
+        print("缺少 build/payload/xixi-todo/xixi-todo.exe，请先执行: python build.py")
         return 1
     if not ICON.exists():
         print("缺少 ui/app.ico")
@@ -153,7 +154,7 @@ def main() -> int:
         out_dir=DIST,
         setup_name=SETUP_BASENAME,
         icon=ICON,
-        app_src=APP_SRC,
+        app_src=APP_SRC_DIR,
         lang_file=lang_file,
         q3='"""',
     )

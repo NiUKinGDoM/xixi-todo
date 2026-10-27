@@ -27,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.2"
+VERSION = "1.5.3"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -192,7 +192,9 @@ DEFAULT_STATE = {
     "collapse_min": True,
     "auto_collapse": False,
     "close_action": "quit",
-    "opacity": 100,
+    # 卡片底色的浓度（纯 CSS，不涉及窗口合成）：
+    # 100 = 纯白卡片，0 = 底色完全消失，只剩内容浮在窗口底色上
+    "card_alpha": 100,
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -210,7 +212,7 @@ def load_state() -> dict:
         "collapse_min": DEFAULT_STATE["collapse_min"],
         "auto_collapse": DEFAULT_STATE["auto_collapse"],
         "close_action": "quit",
-        "opacity": DEFAULT_STATE["opacity"],
+        "card_alpha": DEFAULT_STATE["card_alpha"],
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
@@ -234,8 +236,8 @@ def load_state() -> dict:
                 if raw.get("close_action") in ("quit", "tray"):
                     state["close_action"] = raw["close_action"]
                 try:
-                    op = int(raw.get("opacity", 100))
-                    state["opacity"] = max(0, min(100, op))
+                    ca = int(raw.get("card_alpha", 100))
+                    state["card_alpha"] = max(0, min(100, ca))
                 except Exception:
                     pass
                 if isinstance(raw.get("snap"), bool):
@@ -617,54 +619,6 @@ def win_show(hwnd: int, restore: bool = True) -> bool:
         return True
     except Exception as exc:
         _log(f"show failed: {exc}")
-        return False
-
-
-GWL_EXSTYLE = -20
-WS_EX_LAYERED = 0x00080000
-LWA_ALPHA = 0x00000002
-
-_u32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
-_u32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
-_u32.SetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
-_u32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
-_u32.SetLayeredWindowAttributes.argtypes = [
-    ctypes.c_void_p, ctypes.c_uint, ctypes.c_ubyte, ctypes.c_uint,
-]
-_u32.SetLayeredWindowAttributes.restype = ctypes.c_bool
-
-
-def win_set_opacity(hwnd: int, percent: int) -> bool:
-    """整窗透明度：0 = 全透明，100 = 全实。
-
-    Windows 上只有分层窗口能做整窗透明。加 WS_EX_LAYERED 之后窗口改由
-    分层合成绘制，圆角/阴影会走 DWM 的另一条路径，所以这里只负责设值，
-    圆角在调用方之后重新裁一次。
-    """
-    if not hwnd:
-        return False
-    try:
-        pct = max(0, min(100, int(percent)))
-        alpha = int(round(pct * 255 / 100))
-        ex = int(_u32.GetWindowLongPtrW(ctypes.c_void_p(hwnd), GWL_EXSTYLE))
-        # 100% 就把分层样式摘掉，回到系统常规绘制 —— 圆角/阴影完全按原样，
-        # 不因为「曾经调过透明度」留下任何后遗症
-        if pct >= 100:
-            if ex & WS_EX_LAYERED:
-                _u32.SetWindowLongPtrW(
-                    ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex & ~WS_EX_LAYERED
-                )
-            return True
-        if not (ex & WS_EX_LAYERED):
-            _u32.SetWindowLongPtrW(
-                ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex | WS_EX_LAYERED
-            )
-        ok = _u32.SetLayeredWindowAttributes(
-            ctypes.c_void_p(hwnd), 0, alpha, LWA_ALPHA
-        )
-        return bool(ok)
-    except Exception as exc:
-        _log(f"set opacity failed: {exc}")
         return False
 
 
@@ -1075,7 +1029,7 @@ class Api:
                 "auto_collapse": bool(self.state.get("auto_collapse", False)),
                 "close_action": self.state.get("close_action", "quit"),
                 "autostart": is_autostart_enabled(),
-                "opacity": int(self.state.get("opacity", 100)),
+                "card_alpha": int(self.state.get("card_alpha", 100)),
             },
             ensure_ascii=False,
         )
@@ -1148,18 +1102,13 @@ class Api:
         save_state(self.state)
         return self.get_window_state()
 
-    def set_opacity(self, value) -> str:
-        """小卡片透明度：0 = 全透明，100 = 全实。拖动滑块时高频调用。"""
+    def set_card_alpha(self, value) -> str:
+        """小卡片底色浓度。纯前端 CSS 变量，窗口合成完全不参与。"""
         try:
             pct = max(0, min(100, int(float(value))))
         except Exception:
             return self.get_window_state()
-        self.state["opacity"] = pct
-        win = self._win()
-        win_set_opacity(_hwnd_of(win) if win is not None else 0, pct)
-        # 分层窗口会重置圆角绘制方式，补一次
-        if win is not None:
-            shape_window(win, 22 if self.state.get("mode", "mini") == "mini" else 14)
+        self.state["card_alpha"] = pct
         save_state(self.state)
         return self.get_window_state()
 
@@ -1846,14 +1795,6 @@ def main() -> None:
 
         # 尺寸与位置都定下来后再裁一次，确保圆角与最终几何匹配
         shape_window(window, 22 if mode == "mini" else 14)
-        # 恢复上次的透明度
-        try:
-            op = int(state.get("opacity", 100))
-            if op < 100:
-                win_set_opacity(_hwnd_of(window), op)
-                shape_window(window, 22 if mode == "mini" else 14)
-        except Exception as exc:
-            _log(f"restore opacity failed: {exc}")
 
         # 启动阶段别吸附、别自动收起
         api._quiet_until = time.monotonic() + 2.0
