@@ -17,10 +17,12 @@ from pathlib import Path
 
 import webview
 
+from tray import SW_HIDE, SW_SHOW, TrayIcon
+
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -179,6 +181,8 @@ DEFAULT_STATE = {
     "collapsed": False,
     "collapse_edge": "",
     "collapse_min": True,
+    "auto_collapse": True,
+    "close_action": "quit",
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -194,6 +198,8 @@ def load_state() -> dict:
         "collapsed": False,
         "collapse_edge": "",
         "collapse_min": True,
+        "auto_collapse": True,
+        "close_action": "quit",
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
@@ -212,6 +218,10 @@ def load_state() -> dict:
                     state["on_top"] = raw["on_top"]
                 if isinstance(raw.get("collapse_min"), bool):
                     state["collapse_min"] = raw["collapse_min"]
+                if isinstance(raw.get("auto_collapse"), bool):
+                    state["auto_collapse"] = raw["auto_collapse"]
+                if raw.get("close_action") in ("quit", "tray"):
+                    state["close_action"] = raw["close_action"]
                 if isinstance(raw.get("snap"), bool):
                     state["snap"] = raw["snap"]
                 if isinstance(raw.get("app_name"), str) and raw["app_name"].strip():
@@ -572,6 +582,13 @@ class Api:
         # 程序化改几何（展开/换尺寸/切模式）后的冷却截止时间。
         # 这些操作也会触发 moved 事件，不拦的话刚展开就被吸回屏幕边。
         self._suppress_snap_until = 0.0
+        self._tray = None
+        # 启动后的静默期：on_shown 的 resize/move 也会触发 moved，
+        # 不拦的话应用一启动就吸到边、又自动收成小条。
+        self._quiet_until = 0.0
+        # 只有用户真的拖动过，才做「贴边自动收起」；
+        # 程序自己挪窗口（切模式、展开）不算。
+        self._user_dragged = False
 
     # ---------- 数据 ----------
 
@@ -703,6 +720,8 @@ class Api:
                 "collapsed": bool(self.state.get("collapsed", False)),
                 "collapse_edge": self.state.get("collapse_edge", ""),
                 "collapse_min": bool(self.state.get("collapse_min", True)),
+                "auto_collapse": bool(self.state.get("auto_collapse", True)),
+                "close_action": self.state.get("close_action", "quit"),
                 "autostart": is_autostart_enabled(),
             },
             ensure_ascii=False,
@@ -738,6 +757,20 @@ class Api:
         save_state(self.state)
         return self.get_window_state()
 
+    def set_close_action(self, action) -> str:
+        """关闭按钮的行为：quit = 退出应用，tray = 收进托盘。"""
+        value = str(action or "").strip()
+        if value in ("quit", "tray"):
+            self.state["close_action"] = value
+            save_state(self.state)
+        return self.get_window_state()
+
+    def set_auto_collapse(self, enabled) -> str:
+        """开关：拖到屏幕边缘松手后是否直接收进边缘。"""
+        self.state["auto_collapse"] = bool(enabled)
+        save_state(self.state)
+        return self.get_window_state()
+
     def set_autostart(self, enabled) -> str:
         """开关：开机自启动（写 HKCU 的 Run 键，无需管理员权限）。"""
         write_autostart(bool(enabled))
@@ -748,6 +781,8 @@ class Api:
         self._suppress_snap_until = time.monotonic() + seconds
 
     def set_dragging(self, flag) -> bool:
+        if flag:
+            self._user_dragged = True
         """前端拖动窗口期间置位：此时不做自动贴边。
 
         拖动是 JS 逐帧调 move 模拟的，拖动中停顿超过防抖时长会被误判成
@@ -1073,9 +1108,67 @@ class Api:
     def close_window(self) -> None:
         self._snapshot(self.state.get("mode", "mini"))
         save_state(self.state)
+        if self.state.get("close_action", "quit") == "tray" and self._hide_to_tray():
+            return
+        self.quit_app()
+
+    # ---------- 托盘 ----------
+
+    def _tray_show(self) -> None:
+        """从托盘恢复窗口。只调 user32，不碰 .NET 对象。"""
+        win = self._win()
+        hwnd = _hwnd_of(win) if win is not None else 0
+        if not hwnd:
+            return
+        user32.ShowWindow(hwnd, SW_SHOW)
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.SetForegroundWindow(hwnd)
+
+    def _ensure_tray(self) -> bool:
+        if self._tray is not None:
+            return True
+        icon = _resource_dir() / "app.ico"
+        if not icon.exists():
+            _log("tray icon missing")
+            return False
+        self._tray = TrayIcon(
+            icon,
+            self.state.get("app_name") or DEFAULT_APP_NAME,
+            on_show=self._tray_show,
+            on_quit=self.quit_app,
+        )
+        ok = self._tray.start()
+        if not ok:
+            self._tray = None
+        _log(f"tray start -> {ok}")
+        return ok
+
+    def _hide_to_tray(self) -> bool:
+        if not self._ensure_tray():
+            return False
+        win = self._win()
+        hwnd = _hwnd_of(win) if win is not None else 0
+        if not hwnd:
+            return False
+        user32.ShowWindow(hwnd, SW_HIDE)
+        _log("hide to tray")
+        return True
+
+    def quit_app(self) -> None:
+        """真正退出（托盘菜单与关闭按钮共用）。"""
+        tray = self._tray
+        self._tray = None
+        if tray is not None:
+            try:
+                tray.stop()
+            except Exception as exc:
+                _log(f"tray stop failed: {exc}")
         win = self._win()
         if win is not None:
-            win.destroy()
+            try:
+                win.destroy()
+            except Exception as exc:
+                _log(f"destroy failed: {exc}")
 
 
 # --------------------------------------------------------------------------
@@ -1320,6 +1413,8 @@ def main() -> None:
 
         # 尺寸与位置都定下来后再裁一次，确保圆角与最终几何匹配
         shape_window(window, 22 if mode == "mini" else 14)
+        # 启动阶段别吸附、别自动收起
+        api._quiet_until = time.monotonic() + 2.0
 
     # ---- 拖动结束后自动贴边 ----
     # pywebview 的 moved 事件会在拖动过程中持续触发，没法区分「正在拖」和「拖完了」。
@@ -1332,6 +1427,8 @@ def main() -> None:
             return
         if time.monotonic() < getattr(api, "_suppress_snap_until", 0.0):
             return
+        if time.monotonic() < getattr(api, "_quiet_until", 0.0):
+            return
         win = holder.get("window")
         if win is None:
             return
@@ -1342,6 +1439,12 @@ def main() -> None:
                 _log(f"auto snap -> {moved_to}")
                 api._snapshot(state.get("mode", "mini"))
                 save_state(state)
+                # 贴到边就收进边缘，不用再点一次最小化
+                if (state.get("auto_collapse", True)
+                        and getattr(api, "_user_dragged", False)
+                        and not state.get("collapsed")):
+                    api._mute_snap(1.0)
+                    api.collapse_window(api._nearest_edge(win, limit=None))
         except Exception as exc:
             _log(f"auto snap failed: {exc}")
         finally:

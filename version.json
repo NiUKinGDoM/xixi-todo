@@ -1,11 +1,11 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "date": "2026-10-27",
-  "notes": "新增安装包，装完有开始菜单/桌面快捷方式，可在设置里开开机自启动；设置入口从顶栏移到左侧栏底部（小卡片是右下角小齿轮）；最小化改为必然收进屏幕边缘，不管窗口在哪点一下都会缩成贴边小条；拖动时不再被自动贴边打断",
+  "notes": "改为安装型应用：只发安装包，不再提供免安装 exe；开机自启动、设置页集中管理、最小化收进边缘",
   "downloads": {
-    "ghproxy": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi-todo.exe",
-    "ghfast": "https://ghfast.top/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi-todo.exe",
-    "github": "https://github.com/NiUKinGDoM/xixi-todo/raw/main/dist/xixi-todo.exe",
-    "setup": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe"
+    "setup": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
+    "ghproxy": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
+    "ghfast": "https://ghfast.top/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
+    "github": "https://github.com/NiUKinGDoM/xixi-todo/raw/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe"
   }
 }

@@ -390,6 +390,32 @@ def main() -> int:
     check("展开后回到原位置", fw3.moves and fw3.moves[-1] == (243, 143), str(fw3.moves[-1:]))
     check("展开后短暂不吸附", api_c._suppress_snap_until > appmod.time.monotonic())
 
+    # ---------- 贴边自动收起 / 关闭行为 ----------
+
+    api_c.set_auto_collapse("")
+    check("贴边自动收起可关闭", api_c.state["auto_collapse"] is False)
+    api_c.set_auto_collapse("1")
+    check("贴边自动收起可打开", api_c.state["auto_collapse"] is True)
+
+    api_c.set_close_action("tray")
+    check("关闭行为可切到托盘", api_c.state["close_action"] == "tray")
+    api_c.set_close_action("quit")
+    saved2 = json.loads(STATE_FILE.read_text("utf-8"))
+    check("关闭行为已落盘", saved2.get("close_action") == "quit", str(saved2)[:80])
+    api_c.set_close_action("乱写")
+    check("非法关闭行为被忽略", api_c.state["close_action"] == "quit")
+
+    # 托盘模式：关闭只隐藏，不退出；退出模式：直接退出
+    called = {"hide": 0, "quit": 0}
+    api_c._hide_to_tray = lambda: (called.__setitem__("hide", called["hide"] + 1) or True)
+    api_c.quit_app = lambda: called.__setitem__("quit", called["quit"] + 1)
+    api_c.state["close_action"] = "tray"
+    api_c.close_window()
+    check("托盘模式下关闭不退出", called["hide"] == 1 and called["quit"] == 0, str(called))
+    api_c.state["close_action"] = "quit"
+    api_c.close_window()
+    check("退出模式下关闭直接退出", called["quit"] == 1, str(called))
+
     # 拖动期间抑制吸附
     api_c.set_dragging("1")
     check("拖动标记可置位", api_c._dragging is True)

@@ -4,7 +4,7 @@
     .venv\\Scripts\\python.exe build_installer.py
 
 前置：先跑 build.py 打出 dist\\xixi-todo.exe，并且已安装 Inno Setup 6。
-产物：dist\\xixiの待办清单-安装包.exe
+产物：dist\\xixiの待办清单-安装包.exe（唯一的发布物）
 
 设计取舍：
 - 按用户安装（{localappdata}\\Programs\\XiXiTodo），不弹 UAC，装完立刻能用
@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 INSTALLER_DIR = ROOT / "installer"
-APP_SRC = DIST / "xixi-todo.exe"
+APP_SRC = ROOT / "build" / "payload" / "xixi-todo.exe"
 ICON = ROOT / "ui" / "app.ico"
 VERSION_JSON = ROOT / "version.json"
 
@@ -125,7 +125,7 @@ def read_version() -> str:
 
 def main() -> int:
     if not APP_SRC.exists():
-        print("缺少 dist/xixi-todo.exe，请先执行: python build.py")
+        print("缺少 build/payload/xixi-todo.exe，请先执行: python build.py")
         return 1
     if not ICON.exists():
         print("缺少 ui/app.ico")

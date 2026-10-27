@@ -664,6 +664,11 @@
       var miss = need.filter(function (id) { return !document.getElementById(id); });
       return miss.length === 0 ? true : '缺少 ' + miss.join(',');
     });
+    t('设置页有贴边自动收起与关闭行为', function () {
+      var need = ['setAutoCollapse', 'setCloseAction'];
+      var miss = need.filter(function (id) { return !document.getElementById(id); });
+      return miss.length === 0 ? true : '缺少 ' + miss.join(',');
+    });
     t('设置页可从卡片入口打开', function () {
       document.getElementById('setBack').click();
       document.getElementById('btnSettingsMini').click();

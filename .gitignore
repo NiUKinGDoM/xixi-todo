@@ -10,8 +10,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# 改名前的旧版本产物，不再发布
-dist/待办事项.exe
+# dist 里只保留安装包；便携版 exe 不再发布，误生成也不入库
+dist/*.exe
+!dist/xixiの待办清单-安装包.exe
 
 # 测试临时产物
 tests/test.html

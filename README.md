@@ -17,20 +17,18 @@ Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单�
 
 ---
 
-## 安装（推荐）
+## 安装
 
-双击 **`dist\xixiの待办清单-安装包.exe`**：
+只发安装包，双击 **`dist\xixiの待办清单-安装包.exe`**：
 
 - 装到 `%LOCALAPPDATA%\Programs\XiXiTodo`，**不需要管理员权限**，不弹 UAC
 - 自动创建开始菜单与桌面快捷方式，安装时可勾选 **开机自启动**
 - 控制面板「应用和功能」里能正常卸载
 - 卸载**不删数据**，待办仍留在 `%APPDATA%\xixi-todo`，重装后接着用
+- **升级**：下载新安装包直接运行即可覆盖安装，待办与窗口位置都不动
 
-装完之后从桌面/开始菜单打开即可，和普通软件一样。
-
-## 免安装
-
-不想安装就双击 **`dist\xixiの待办清单.exe`** 直接跑，无需 Python 或任何运行时。
+装完之后从桌面/开始菜单打开即可，和普通软件一样。应用内「检查更新」
+也会直接给你新安装包的下载地址。
 
 **两种形态，一键切换：**
 
@@ -144,13 +142,17 @@ Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单�
 
 1. 改 `app.py` 的 `VERSION`（如 `1.2.0` → `1.2.1`）
 2. 改 `version.json` 的 `version`、`date`、`notes`
-3. `python build.py` 重新打包（会把新版本号打进 exe）
+3. 打包两步（`build.py` 只产中间产物，`build_installer.py` 出安装包）：
+   ```bash
+   venv\Scripts\python build.py            # → build\payload\xixi-todo.exe
+   venv\Scripts\python build_installer.py  # → dist\xixiの待办清单-安装包.exe
+   ```
 4. 跑一遍全部测试：`run_tests.bat` 或手动跑四个脚本
-5. 提交并推送，**exe 跟着一起进仓库**：
+5. 提交并推送，**安装包跟着一起进仓库**：
 
 ```bash
-git add -A          # dist/ 下的 exe 是跟踪的，会一起提交
-git commit -m "release: v1.2.1"
+git add -A          # dist/ 下的安装包是跟踪文件，会一起提交
+git commit -m "release: v1.4.1"
 git push
 ```
 
@@ -168,12 +170,14 @@ curl -s "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json" | h
 
 推上去后，已经装了旧版的用户在下次打开时就会收到更新提示。
 
-> 注意：`version.json` 里的下载链接指向 `dist/xixi-todo.exe`（英文别名）。
-> 用英文名而不是中文名，是为了让镜像服务对 URL 的转义不会出问题。
+> 注意：`version.json` 里的 `downloads` 全部指向**安装包**（中文名做了 URL 编码）。
+> 应用内点「下载安装包」拿到的就是 setup.exe，覆盖安装即完成升级。
 >
-> exe 是**直接提交进仓库**的（不是发 Releases），这样 raw / jsDelivr / gh-proxy
-> 三条更新链路都能直接取到二进制，用户点「去下载」即可。
-> 代价是每次发版仓库会多约 13 MB（Git 只存增量，实际增长远小于此）。
+> 安装包是**直接提交进仓库**的（不是发 Releases），这样 raw / gh-proxy / ghfast
+> 三条链路都能取到二进制。每次发版仓库增长约 14 MB（Git 只存增量）。
+>
+> `dist` 里只保留安装包。便携版 exe 已经取消 —— 两个入口容易误点，
+> 而且便携版和安装版共用同一个数据目录，双开时容易互相覆盖。
 
 ---
 
@@ -207,9 +211,9 @@ venv\Scripts\pip install pywebview pyinstaller pillow
 # 2. 生成图标（改了配色才需要）
 venv\Scripts\python make_icon.py
 
-# 3. 打包应用
+# 3. 打包应用本体（中间产物，不直接发布）
 venv\Scripts\python build.py
-# 产物：dist\xixiの待办清单.exe（另存一份 dist\xixi-todo.exe 供更新下载）
+# 产物：build\payload\xixi-todo.exe
 
 # 4. 打包安装包（需要 Inno Setup 6）
 winget install JRSoftware.InnoSetup
@@ -285,9 +289,7 @@ todo-glass/
 │   ├── grab_window.py     抓取运行窗口截图
 │   └── click_mode.py      真实鼠标点击验证形态切换
 └── dist/
-    ├── xixiの待办清单-安装包.exe  ← 交付物（推荐）
-    ├── xixiの待办清单.exe         ← 免安装版
-    └── xixi-todo.exe               ← 同内容英文别名（更新检查用）
+    └── xixiの待办清单-安装包.exe  ← 唯一发布物
 ```
 
 ---

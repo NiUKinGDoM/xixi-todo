@@ -1,9 +1,13 @@
-"""PyInstaller 打包配置：生成单个 exe。
+"""PyInstaller 打包：产出安装包的 payload（不直接发布）。
+
+应用只以安装包形式分发，所以这里只生成一个中间产物，
+由 build_installer.py 打进 setup.exe。dist 里只留安装包，
+避免用户误点「免安装版」。
 
 用法：
     .venv\\Scripts\\python.exe build.py
 产物：
-    dist\\xixiの待办清单.exe
+    build\\payload\\xixi-todo.exe（供安装包打包，不进仓库）
 """
 
 from __future__ import annotations
@@ -14,7 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-APP_NAME = "xixiの待办清单"
+PAYLOAD_NAME = "xixi-todo"
+PAYLOAD_DIR = ROOT / "build" / "payload"
 ENTRY = ROOT / "app.py"
 UI_DIR = ROOT / "ui"
 ICON = UI_DIR / "app.ico"
@@ -34,11 +39,11 @@ def main() -> int:
         "--onefile",
         "--windowed",
         "--name",
-        APP_NAME,
+        PAYLOAD_NAME,
         "--icon",
         str(ICON),
         "--distpath",
-        str(ROOT / "dist"),
+        str(PAYLOAD_DIR),
         "--workpath",
         str(ROOT / "build"),
         "--specpath",
@@ -64,19 +69,11 @@ def main() -> int:
         print("打包失败")
         return result.returncode
 
-    exe = ROOT / "dist" / f"{APP_NAME}.exe"
+    exe = PAYLOAD_DIR / f"{PAYLOAD_NAME}.exe"
     if exe.exists():
-        # 额外输出一份 ASCII 文件名：镜像/更新链接里中文路径容易被处理坏，
-        # 用英文别名保证下载链接稳定可追踪。
-        alias = ROOT / "dist" / "xixi-todo.exe"
-        try:
-            shutil.copy2(exe, alias)
-        except Exception as exc:
-            print(f"警告：未能生成英文别名 - {exc}")
-
         size_mb = exe.stat().st_size / 1024 / 1024
-        print(f"\n完成：{exe}  ({size_mb:.1f} MB)")
-        print(f"别名：{alias}")
+        print(f"\npayload：{exe}  ({size_mb:.1f} MB)")
+        print("下一步：python build_installer.py（生成 dist 下的安装包）")
     else:
         print("\n未找到产物")
         return 1

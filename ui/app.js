@@ -55,6 +55,8 @@
     btnSettingsMini: $('btnSettingsMini'),
     setAutoStart: $('setAutoStart'),
     setCollapse: $('setCollapse'),
+    setAutoCollapse: $('setAutoCollapse'),
+    closeSeg: $('setCloseAction'),
     menuQuit: $('menuQuit'),
     menuBackup: $('menuBackup'),
     menuRestore: $('menuRestore'),
@@ -1039,12 +1041,12 @@
   function askToUpdate(data) {
     var desc = '当前 v' + currentVersion + ' → 最新 v' + data.version +
                (data.notes ? '\n\n' + data.notes : '') +
-               '\n\n是否打开下载页面？';
-    askConfirm('发现新版本 v' + data.version, desc, '去下载').then(function (ok) {
+               '\n\n下载新安装包后双击运行即可覆盖升级，待办数据不受影响。';
+    askConfirm('发现新版本 v' + data.version, desc, '下载安装包').then(function (ok) {
       if (!ok) return;
       var dl = data.downloads || {};
-      // 优先用实测可用的加速镜像（jsDelivr 不代理 exe，GitHub raw 大文件常被拦）
-      var url = dl.ghproxy || dl.ghfast || dl.github || dl.jsdelivr ||
+      // 只发安装包：下载 setup 覆盖安装，和旧版共用同一个安装目录与数据目录
+      var url = dl.setup || dl.ghproxy || dl.ghfast || dl.github ||
                 ('https://github.com/' + REPO + '/releases/latest');
       callApi('open_url', url);
     });
@@ -1218,6 +1220,14 @@
     if (el.setSnap) el.setSnap.classList.toggle('is-on', winState.snap);
     if (el.setTop) el.setTop.classList.toggle('is-on', winState.on_top);
     if (el.setCollapse) el.setCollapse.classList.toggle('is-on', winState.collapse_min);
+    if (el.setAutoCollapse) el.setAutoCollapse.classList.toggle('is-on', winState.auto_collapse);
+    if (el.closeSeg) {
+      var cbs = el.closeSeg.querySelectorAll('button');
+      for (var k = 0; k < cbs.length; k++) {
+        cbs[k].classList.toggle('is-active',
+          cbs[k].getAttribute('data-close') === winState.close_action);
+      }
+    }
     if (el.setAutoStart) el.setAutoStart.classList.toggle('is-on', winState.autostart);
     if (el.sizeSeg) {
       var btns = el.sizeSeg.querySelectorAll('button');
@@ -1271,6 +1281,31 @@
         var st = parseState(raw);
         if (st) applyWindowState(st); else { winState.collapse_min = next; renderSettings(); }
         toast(next ? '最小化时收进边缘：开' : '最小化时收进边缘：关');
+      });
+    });
+  }
+
+  if (el.setAutoCollapse) {
+    el.setAutoCollapse.addEventListener('click', function () {
+      var next = !winState.auto_collapse;
+      callApi('set_auto_collapse', next ? '1' : '').then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyWindowState(st); else { winState.auto_collapse = next; renderSettings(); }
+        toast(next ? '拖到边缘松手就收进边缘' : '贴边只吸附，不自动收起');
+      });
+    });
+  }
+
+  if (el.closeSeg) {
+    el.closeSeg.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-close]');
+      if (!b) return;
+      var val = b.getAttribute('data-close');
+      callApi('set_close_action', val).then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyWindowState(st);
+        renderSettings();
+        toast(val === 'tray' ? '关闭按钮改为收进托盘' : '关闭按钮改为退出应用');
       });
     });
   }
@@ -1422,7 +1457,8 @@
     mode: 'mini', on_top: true, snap: true,
     app_name: 'xixiの待办', mini_preset: 1,
     collapsed: false, collapse_edge: '',
-    collapse_min: true, autostart: false
+    collapse_min: true, auto_collapse: true,
+    close_action: 'quit', autostart: false
   };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
