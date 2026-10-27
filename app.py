@@ -27,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.4"
+VERSION = "1.5.5"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）

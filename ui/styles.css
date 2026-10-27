@@ -2659,3 +2659,20 @@ body.mode-mini .mini-foot,
 body.mode-mini .hero {
   background: var(--card-bg);
 }
+
+/* ============================================================
+   检查更新：点下去立刻有反馈
+   以前点了没反应（后台那次检查把点击吞掉了），用户只能连点。
+   现在一按图标就转，文字变「检查中…」，等结果出来再复原。
+   ============================================================ */
+@keyframes upd-spin {
+  to { transform: rotate(360deg); }
+}
+
+#menuUpdate.is-checking { cursor: progress; }
+#menuUpdate.is-checking .set-ico svg {
+  animation: upd-spin 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+#menuUpdate.is-checking .set-chev { opacity: 0.25; }
+#menuUpdate.is-checking .set-text b { color: var(--ink-2); }

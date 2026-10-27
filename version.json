@@ -1,7 +1,7 @@
 {
-  "version": "1.5.4",
+  "version": "1.5.5",
   "date": "2026-10-27",
-  "notes": "修复应用内更新弹「Windows 找不到 '\\' 文件」：安装程序现在能正常启动、静默装完并自动重开应用；顺带修掉窗口状态偶发保存失败",
+  "notes": "打开应用后自动检查更新，有新版本直接弹出来（同一版本一天只提醒一次）；「检查更新」点下去立刻转圈，不再出现点了没反应、得连点几下",
   "downloads": {
     "mirrors": [
       "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",

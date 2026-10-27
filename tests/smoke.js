@@ -829,6 +829,46 @@
       return /发现新版本/.test(txt) ? true : 'text=' + txt;
     });
 
+    /* ---- 检查更新：点下去必须立刻有反馈 ---- */
+    t('点检查更新立刻显示检查中', function () {
+      var st = A.getUpdateState();
+      st.checking = false; st.task = null; st.askResult = false;
+      var origFetch = window.fetch;
+      window.fetch = function () { return new Promise(function () {}); };  // 永不返回
+      A.checkUpdate(false);
+      var txt = document.getElementById('updateLabel').textContent;
+      var spinning = document.getElementById('menuUpdate').classList.contains('is-checking');
+      window.fetch = origFetch;
+      st.checking = false; st.task = null; st.askResult = false;
+      return (txt === '检查中…' && spinning)
+        ? true : 'text=' + txt + ' spinning=' + spinning;
+    });
+
+    t('检查途中再点复用同一次请求', function () {
+      var st = A.getUpdateState();
+      st.checking = false; st.task = null; st.askResult = false;
+      var calls = 0;
+      var origFetch = window.fetch;
+      window.fetch = function () { calls++; return new Promise(function () {}); };
+      var first = A.checkUpdate(true);        // 开机自动检查
+      var second = A.checkUpdate(false);      // 用户等不及点了一下
+      var same = first === second;            // 同一次任务，没有另起一次
+      var tracked = st.task === first;
+      var asked = st.askResult;               // 结束后要弹窗给用户看
+      window.fetch = origFetch;
+      st.checking = false; st.task = null; st.askResult = false;
+      return (same && tracked && asked === true)
+        ? true : 'same=' + same + ' tracked=' + tracked + ' ask=' + asked;
+    });
+
+    t('检查结束标签能复原', function () {
+      var st = A.getUpdateState();
+      st.checking = false; st.hasUpdate = false; st.latest = null;
+      A.setUpdateBadge(false);
+      var txt = document.getElementById('updateLabel').textContent;
+      return txt === '检查更新' ? true : 'text=' + txt;
+    });
+
     /* ---- 重命名 / 贴边 / 尺寸 / 缩放 ---- */
     t('设置页里能改应用名', function () {
       var inp = document.getElementById('setName');

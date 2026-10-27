@@ -997,8 +997,17 @@
     'https://raw.githubusercontent.com/' + REPO + '/main/version.json'
   ];
 
-  var updateState = { checking: false, latest: null, hasUpdate: false };
+  var updateState = {
+    checking: false,
+    latest: null,
+    hasUpdate: false,
+    manifest: null,     // 最近一次拿到的清单，点「发现新版本」时直接用，不再重查
+    task: null,         // 正在跑的那次检查，重复点击复用它
+    askResult: false    // 这次检查结束后要不要给反馈（用户点过就要）
+  };
   var currentVersion = '';
+  // 自动弹更新框的记录：同一个版本、同一天只弹一次，免得每次开都打扰
+  var UPDATE_PROMPT_KEY = 'updatePrompted';
 
   function parseVer(v) {
     return String(v || '').replace(/^v/i, '').split('.')
@@ -1043,7 +1052,7 @@
     // gh-proxy 缓存着 1.5.0，后面的 ghfast 明明已经有 1.5.1，
     // 却因为前一个已经"成功"而根本不会被问到，用户永远收不到新版本。
     var jobs = UPDATE_SOURCES.map(function (url) {
-      return fetchWithTimeout(url, 6000).then(function (data) {
+      return fetchWithTimeout(url, 4500).then(function (data) {
         if (!data || !data.version) throw new Error('bad manifest');
         return data;
       }).catch(function () { return null; });
@@ -1064,50 +1073,119 @@
     updateState.hasUpdate = !!on;
     if (el.btnSettings) el.btnSettings.classList.toggle('has-update', !!on);
     if (el.btnSettingsMini) el.btnSettingsMini.classList.toggle('has-update', !!on);
-    if (el.updateLabel) {
-      el.updateLabel.textContent = on ? '发现新版本 ' + updateState.latest : '检查更新';
+    renderUpdateLabel();
+  }
+
+  /** 更新行上的文字与转圈状态：只有一个来源，避免两边对不上。 */
+  function renderUpdateLabel() {
+    if (el.menuUpdate) {
+      el.menuUpdate.classList.toggle('is-checking', updateState.checking);
+    }
+    if (!el.updateLabel) return;
+    if (updateState.checking) {
+      el.updateLabel.textContent = '检查中…';
+    } else if (updateState.hasUpdate) {
+      el.updateLabel.textContent = updateState.latest
+        ? '发现新版本 ' + updateState.latest
+        : '发现新版本';
+    } else {
+      el.updateLabel.textContent = '检查更新';
     }
   }
 
+  function setChecking(on) {
+    updateState.checking = !!on;
+    renderUpdateLabel();
+  }
+
+  /** 用户正开着别的面板（编辑、确认框、添加抽屉）时，别弹出更新框抢焦点。 */
+  function uiBusy() {
+    if (el.modalMask && !el.modalMask.hidden) return true;
+    if (el.dlgMask && !el.dlgMask.hidden) return true;
+    if (el.updMask && !el.updMask.hidden) return true;
+    return document.body.classList.contains('is-adding');
+  }
+
+  /** 开机自动查：同一版本同一天只自动弹一次，其他时候只亮小红点。 */
+  function shouldAutoPrompt(version) {
+    try {
+      var raw = localStorage.getItem(UPDATE_PROMPT_KEY) || '';
+      var today = new Date().toISOString().slice(0, 10);
+      return raw !== version + '@' + today;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function markAutoPrompted(version) {
+    try {
+      var today = new Date().toISOString().slice(0, 10);
+      localStorage.setItem(UPDATE_PROMPT_KEY, version + '@' + today);
+    } catch (e) { /* 存不了就算了，下次再弹 */ }
+  }
+
   function checkUpdate(silent) {
-    if (updateState.checking) return Promise.resolve(null);
-    updateState.checking = true;
-    if (!silent && el.updateLabel) el.updateLabel.textContent = '检查中…';
+    // 已经有一次在跑：不吞掉这次点击，而是等同一个结果。
+    // 之前这里直接 return null —— 开机那次静默检查要跑好几秒，
+    // 这段时间里点「检查更新」完全没反应，用户就会以为按钮坏了，连点好几下。
+    if (updateState.checking && updateState.task) {
+      if (!silent) {
+        updateState.askResult = true;
+        renderUpdateLabel();
+      }
+      return updateState.task;
+    }
+
+    updateState.askResult = updateState.askResult || !silent;
+    setChecking(true);
 
     // 没拿到本地版本号就先补取。否则空版本会和任何远端版本比较，
     // 导致「明明是最新版却提示有新版本」的误报。
     var ready = currentVersion ? Promise.resolve() : initVersion();
 
-    return ready.then(function () {
+    var task = ready.then(function () {
       if (!currentVersion) throw new Error('local version unknown');
       return fetchUpdateManifest();
     }).then(function (data) {
-      updateState.checking = false;
+      updateState.manifest = data;
       updateState.latest = String(data.version);
       var newer = compareVer(data.version, currentVersion) > 0;
+      var ask = updateState.askResult;
+      updateState.askResult = false;
+
+      setChecking(false);
+      setUpdateBadge(newer);
 
       if (newer) {
-        setUpdateBadge(true);
-        if (silent) {
-          toast('发现新版本 v' + data.version + '，进设置即可更新');
+        if (ask) {
+          openUpdateDialog(data);
+        } else if (shouldAutoPrompt(data.version) && !uiBusy()) {
+          // 开机自动查到的：直接弹出来，别只闪一条提示（小卡片收起来时根本看不见）
+          markAutoPrompted(data.version);
+          openUpdateDialog(data);
         } else {
-          askToUpdate(data);
+          toast('发现新版本 v' + data.version + '，进设置即可更新');
         }
-      } else {
-        setUpdateBadge(false);
-        if (!silent) toast('已是最新版本 v' + currentVersion);
+      } else if (ask) {
+        toast('已是最新版本 v' + currentVersion);
       }
       return data;
-    }).catch(function () {
-      updateState.checking = false;
-      if (el.updateLabel) el.updateLabel.textContent = '检查更新';
-      if (!silent) toast('检查失败，请检查网络');
+    }).catch(function (err) {
+      var ask = updateState.askResult;
+      updateState.askResult = false;
+      setChecking(false);
+      if (ask) {
+        toast(currentVersion ? '检查失败，请检查网络' : '读不到版本号，请重启应用再试');
+      }
       return null;
     });
-  }
 
-  function askToUpdate(data) {
-    openUpdateDialog(data);
+    updateState.task = task;
+    // 无论成败都要把 task 清掉，否则下一次检查会被当成「还在跑」
+    task.then(function () {
+      if (updateState.task === task) updateState.task = null;
+    });
+    return task;
   }
 
   /* ---------- 应用内更新：下载 + 进度 + 就地安装 ----------
@@ -1294,14 +1372,18 @@
 
   if (el.menuUpdate) {
     el.menuUpdate.addEventListener('click', function () {
-      if (updateState.hasUpdate) {
-        // 已经知道有新版本，直接弹详情，不用再查一遍
-        fetchUpdateManifest().then(askToUpdate).catch(function () {
-          toast('检查失败，请检查网络');
-        });
-      } else {
-        checkUpdate(false);
+      // 正在检查：再点只是「我等这个结果」，界面已经显示「检查中…」
+      if (updateState.checking) {
+        updateState.askResult = true;
+        renderUpdateLabel();
+        return;
       }
+      // 已经知道有新版本：直接用上次那份清单弹窗，不再等一轮网络
+      if (updateState.hasUpdate && updateState.manifest) {
+        openUpdateDialog(updateState.manifest);
+        return;
+      }
+      checkUpdate(false);
     });
   }
   /* ---------- 备份 / 导入 ---------- */
@@ -2095,9 +2177,10 @@
         // initWindowUi 那次基本都拿不到 api，不同步的话开关会一直显示
         // 前端写死的默认值，跟磁盘里的真实配置对不上。
         syncWindowState();
-        // 先拿到本地版本号，再延迟静默检查更新，避免误报
+        // 先拿到本地版本号，再静默检查更新。1.2 秒足够界面先稳住，
+        // 又不至于让用户等了半天才看到「发现新版本」。
         initVersion().then(function () {
-          setTimeout(function () { checkUpdate(true); }, 3000);
+          setTimeout(function () { checkUpdate(true); }, 1200);
         });
       } else if (tries > 40) {
         clearInterval(timer);
@@ -2138,6 +2221,7 @@
     getUpdateState: function () { return updateState; },
     openUpdateDialog: openUpdateDialog,
     setUpdateBadge: setUpdateBadge,
+    renderUpdateLabel: renderUpdateLabel,
     checkUpdate: checkUpdate,
     getCurrentVersion: function () { return currentVersion; }
   };
