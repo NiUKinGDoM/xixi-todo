@@ -1,11 +1,11 @@
 {
   "version": "1.4.0",
   "date": "2026-10-27",
-  "notes": "改为安装型应用：只发安装包，不再提供免安装 exe；开机自启动、设置页集中管理、最小化收进边缘",
+  "notes": "改为安装型应用：只发安装包，不再提供免安装 exe；贴边松手直接收进边缘；关闭按钮可选退出或收进托盘",
   "downloads": {
-    "setup": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
-    "ghproxy": "https://gh-proxy.com/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
-    "ghfast": "https://ghfast.top/https://raw.githubusercontent.com/NiUKinGDoM/xixi-todo/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe",
-    "github": "https://github.com/NiUKinGDoM/xixi-todo/raw/main/dist/xixi%E3%81%AE%E5%BE%85%E5%8A%9E%E6%B8%85%E5%8D%95-%E5%AE%89%E8%A3%85%E5%8C%85.exe"
+    "setup": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+    "ghproxy": "https://gh-proxy.com/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+    "ghfast": "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",
+    "github": "https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe"
   }
 }

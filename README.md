@@ -19,13 +19,15 @@ Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单�
 
 ## 安装
 
-只发安装包，双击 **`dist\xixiの待办清单-安装包.exe`**：
+从 **[Releases](https://github.com/NiUKinGDoM/xixi-todo/releases/latest)** 下载
+`xixi-todo-setup.exe`，双击安装：
 
 - 装到 `%LOCALAPPDATA%\Programs\XiXiTodo`，**不需要管理员权限**，不弹 UAC
 - 自动创建开始菜单与桌面快捷方式，安装时可勾选 **开机自启动**
 - 控制面板「应用和功能」里能正常卸载
 - 卸载**不删数据**，待办仍留在 `%APPDATA%\xixi-todo`，重装后接着用
 - **升级**：下载新安装包直接运行即可覆盖安装，待办与窗口位置都不动
+- 应用内「检查更新」会直接给你 Release 里的安装包地址
 
 装完之后从桌面/开始菜单打开即可，和普通软件一样。应用内「检查更新」
 也会直接给你新安装包的下载地址。
@@ -148,21 +150,31 @@ Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单�
    venv\Scripts\python build_installer.py  # → dist\xixiの待办清单-安装包.exe
    ```
 4. 跑一遍全部测试：`run_tests.bat` 或手动跑四个脚本
-5. 提交并推送，**安装包跟着一起进仓库**：
+5. 把安装包传进 GitHub Release（固定资产名 `xixi-todo-setup.exe`）：
 
 ```bash
-git add -A          # dist/ 下的安装包是跟踪文件，会一起提交
+# 新建 Release 并上传（tag 用版本号，资产名固定）
+# 网页操作也可以：Releases → Draft a new release → 拖入 dist 里的安装包
+```
+
+资产名保持固定，配合 `releases/latest/download/xixi-todo-setup.exe`
+这条链接，以后发版**不用改 version.json 里的 URL**。
+
+6. 提交并推送版本清单（仓库不再存二进制）：
+
+```bash
+git add -A
 git commit -m "release: v1.4.1"
 git push
 ```
 
-6. 清 jsDelivr 缓存（它对 `@main` 有最长 12 小时缓存，不清的话部分用户会读到旧清单）：
+7. 清 jsDelivr 缓存（它对 `@main` 有最长 12 小时缓存，不清的话部分用户会读到旧清单）：
 
 ```bash
 curl "https://purge.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json"
 ```
 
-7. 复核：确认远程已经是新版本
+8. 复核：确认远程已经是新版本
 
 ```bash
 curl -s "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json" | head -3
@@ -170,14 +182,12 @@ curl -s "https://cdn.jsdelivr.net/gh/NiUKinGDoM/xixi-todo@main/version.json" | h
 
 推上去后，已经装了旧版的用户在下次打开时就会收到更新提示。
 
-> 注意：`version.json` 里的 `downloads` 全部指向**安装包**（中文名做了 URL 编码）。
-> 应用内点「下载安装包」拿到的就是 setup.exe，覆盖安装即完成升级。
+> 注意：`version.json` 的 `downloads` 指向 **Release 资产**
+> （`releases/latest/download/xixi-todo-setup.exe`），带 gh-proxy / ghfast 加速前缀。
+> 仓库里**不再存二进制**，克隆体积不会随版本膨胀。
 >
-> 安装包是**直接提交进仓库**的（不是发 Releases），这样 raw / gh-proxy / ghfast
-> 三条链路都能取到二进制。每次发版仓库增长约 14 MB（Git 只存增量）。
->
-> `dist` 里只保留安装包。便携版 exe 已经取消 —— 两个入口容易误点，
-> 而且便携版和安装版共用同一个数据目录，双开时容易互相覆盖。
+> `dist` 只是本地构建产物，已加入 `.gitignore`。便携版已经取消 ——
+> 两个入口容易误点，而且便携版和安装版共用同一个数据目录，双开容易互相覆盖。
 
 ---
 
@@ -289,7 +299,7 @@ todo-glass/
 │   ├── grab_window.py     抓取运行窗口截图
 │   └── click_mode.py      真实鼠标点击验证形态切换
 └── dist/
-    └── xixiの待办清单-安装包.exe  ← 唯一发布物
+    └── xixiの待办清单-安装包.exe  ← 本地构建产物（不进仓库，上传到 Release）
 ```
 
 ---
