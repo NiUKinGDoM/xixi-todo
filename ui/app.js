@@ -952,8 +952,10 @@
   // 顺序有讲究：jsDelivr 对 @main 有最长 12 小时缓存，发版后可能还返回旧清单，
   // 所以先问两个 GitHub 反代，raw 在前一台机器上常被拦，放最后兜底。
   var UPDATE_SOURCES = [
-    'https://gh-proxy.com/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
+    // ghfast 排第一：实测它的缓存最松，发版后基本能立刻拿到新清单。
+    // gh-proxy 会按路径缓存，发版后可能还吐旧版本（并行取最高版本兜住了这点）。
     'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
+    'https://gh-proxy.com/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
     'https://cdn.jsdelivr.net/gh/' + REPO + '@main/version.json',
     'https://raw.githubusercontent.com/' + REPO + '/main/version.json'
   ];
@@ -999,21 +1001,26 @@
   }
 
   function fetchUpdateManifest() {
-    var i = 0;
-    function next() {
-      if (i >= UPDATE_SOURCES.length) return Promise.reject(new Error('all sources failed'));
-      var url = UPDATE_SOURCES[i++];
+    // 并行问所有源，取版本号最高的那份。
+    // 之前是串行「第一个成功的就用」，结果撞上镜像缓存就废了：
+    // gh-proxy 缓存着 1.5.0，后面的 ghfast 明明已经有 1.5.1，
+    // 却因为前一个已经"成功"而根本不会被问到，用户永远收不到新版本。
+    var jobs = UPDATE_SOURCES.map(function (url) {
       return fetchWithTimeout(url, 6000).then(function (data) {
         if (!data || !data.version) throw new Error('bad manifest');
-        // 镜像缓存可能给出比本地还旧的清单，别据此判定「已是最新」，
-        // 换下一个源继续问，直到拿到不旧于本地的版本。
-        if (currentVersion && compareVer(data.version, currentVersion) < 0) {
-          throw new Error('stale manifest ' + data.version);
-        }
         return data;
-      }).catch(function () { return next(); });
-    }
-    return next();
+      }).catch(function () { return null; });
+    });
+
+    return Promise.all(jobs).then(function (list) {
+      var best = null;
+      list.forEach(function (data) {
+        if (!data) return;
+        if (!best || compareVer(data.version, best.version) > 0) best = data;
+      });
+      if (!best) throw new Error('all sources failed');
+      return best;
+    });
   }
 
   function setUpdateBadge(on) {
