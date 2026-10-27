@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -14,6 +15,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+
+# 隔离测试数据目录，避免跑测试覆盖用户真实的待办数据
+import tempfile
+os.environ["XIXI_TODO_DATA_DIR"] = tempfile.mkdtemp(prefix="xixi-test-")
 
 from app import Api, JsonList, Store  # noqa: E402
 

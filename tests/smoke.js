@@ -682,12 +682,110 @@
       return /发现新版本/.test(txt) ? true : 'text=' + txt;
     });
 
+    /* ---- 重命名 / 贴边 / 尺寸 / 缩放 ---- */
+    t('重命名弹窗可打开并回填', function () {
+      var mask = document.getElementById('dlgMask');
+      if (!mask) return '缺少 dlgMask';
+      document.getElementById('menuRename').click();
+      var shown = mask.hidden === false;
+      var val = document.getElementById('dlgInput').value;
+      return (shown && val.length > 0) ? true : 'shown=' + shown + ' val=' + val;
+    });
+    t('重命名弹窗可取消', function () {
+      document.getElementById('dlgCancel').click();
+      return document.getElementById('dlgMask').hidden === true ? true : '未关闭';
+    });
+    t('重命名确认后标题同步', function () {
+      var mask = document.getElementById('dlgMask');
+      document.getElementById('menuRename').click();
+      document.getElementById('dlgInput').value = '测试名称';
+      document.getElementById('dlgOk').click();
+      // callApi 无桥接时返回 null，走 applyAppName 兜底
+      return mask.hidden === true ? true : '弹窗未关闭';
+    });
+    t('缩放手柄存在且可交互', function () {
+      var g = document.getElementById('resizeGrip');
+      if (!g) return '缺少手柄';
+      var cs = getComputedStyle(g);
+      return (cs.display !== 'none' && parseFloat(cs.opacity) > 0.2)
+        ? true : 'display=' + cs.display + ' opacity=' + cs.opacity;
+    });
+    t('缩放手柄在窗口右下角', function () {
+      var g = document.getElementById('resizeGrip');
+      var r = g.getBoundingClientRect();
+      var gapR = window.innerWidth - r.right;
+      var gapB = window.innerHeight - r.bottom;
+      return (gapR >= 0 && gapR <= 8 && gapB >= 0 && gapB <= 10)
+        ? true : '右边距=' + Math.round(gapR) + ' 下边距=' + Math.round(gapB);
+    });
+
     /* ---- 异常 ---- */
     t('无未捕获异常', function () {
       return window.__errors.length === 0 ? true : window.__errors.join('; ');
     });
 
-    document.title = R.join(' ;; ');
+    // 重命名 / 贴边 / 尺寸都走 Promise（callApi 与弹窗都是异步的），
+    // 必须等微任务跑完再断言，否则读到的是点击前的旧值。
+    setTimeout(function () {
+      runAsync(R, t);
+      document.title = R.join(' ;; ');
+    }, 150);
+  }
+
+  function runAsync(R, t) {
+    /* ---- 重命名 ---- */
+    document.getElementById('menuRename').click();
+    document.getElementById('dlgInput').value = '测试名称';
+    document.getElementById('dlgOk').click();
+
+    setTimeout(function () {
+      t('重命名后小卡片标题已变', function () {
+        var el = document.querySelector('.minibar-title');
+        return el && el.textContent === '测试名称' ? true : 'text=' + (el && el.textContent);
+      });
+      t('重命名后侧边栏标题已变', function () {
+        var el = document.querySelector('.brand-text h1');
+        return el && el.textContent === '测试名称' ? true : 'text=' + (el && el.textContent);
+      });
+
+      /* ---- 自动贴边开关 ---- */
+      var val = document.getElementById('snapVal');
+      var before = val.textContent;
+      document.getElementById('menuSnap').click();
+
+      setTimeout(function () {
+        var after = val.textContent;
+        document.getElementById('menuSnap').click();
+
+        setTimeout(function () {
+          var back = val.textContent;
+          t('贴边开关可切换且显示状态', function () {
+            return (after !== before && back === before) ? true
+              : 'before=' + before + ' after=' + after + ' back=' + back;
+          });
+
+          /* ---- 尺寸档循环 ---- */
+          var sizeVal = document.getElementById('sizeVal');
+          var seen = {};
+          var i = 0;
+          (function step() {
+            if (i >= 3) {
+              var n = Object.keys(seen).length;
+              t('尺寸档循环切换', function () {
+                return n === 3 ? true : '只出现 ' + n + ' 种：' + Object.keys(seen).join('/');
+              });
+              return;
+            }
+            i++;
+            document.getElementById('menuSize').click();
+            setTimeout(function () {
+              seen[sizeVal.textContent] = 1;
+              step();
+            }, 60);
+          })();
+        }, 80);
+      }, 80);
+    }, 120);
   }
 
   setTimeout(run, 1400);

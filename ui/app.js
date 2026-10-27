@@ -69,6 +69,18 @@
     menuUpdate: $('menuUpdate'),
     updateLabel: $('updateLabel'),
     appVersion: $('appVersion'),
+    menuRename: $('menuRename'),
+    menuSnap: $('menuSnap'),
+    menuSize: $('menuSize'),
+    snapVal: $('snapVal'),
+    sizeVal: $('sizeVal'),
+    dlgMask: $('dlgMask'),
+    dlgTitle: $('dlgTitle'),
+    dlgDesc: $('dlgDesc'),
+    dlgInput: $('dlgInput'),
+    dlgOk: $('dlgOk'),
+    dlgCancel: $('dlgCancel'),
+    resizeGrip: $('resizeGrip'),
     btnPin: $('btnPin'),
     btnMode: $('btnMode'),
     btnMin: $('btnMin'),
@@ -88,7 +100,11 @@
     var a = bridge();
     if (!a || typeof a[name] !== 'function') return Promise.resolve(null);
     try {
-      var r = (arg === undefined) ? a[name]() : a[name](arg);
+      // 支持多参数：传数组时展开调用（如 resize_window(w, h)）
+      var r;
+      if (arg === undefined) r = a[name]();
+      else if (Object.prototype.toString.call(arg) === '[object Array]') r = a[name].apply(a, arg);
+      else r = a[name](arg);
       return (r && typeof r.then === 'function') ? r : Promise.resolve(r);
     } catch (e) { return Promise.resolve(null); }
   }
@@ -711,18 +727,16 @@
   }
 
   function createGroup() {
-    if (!el.groupList || !el.groupList.parentNode) {
-      // 完整模式下用侧边栏的输入框逻辑
-    }
-    var name = window.prompt('新分组名称', '');
-    if (name === null) return;
-    name = String(name).trim().slice(0, 12);
-    if (!name) return;
-    if (groups.indexOf(name) >= 0) { toast('分组已存在'); return; }
-    groups.push(name);
-    saveGroups();
-    render();
-    toast('已新建分组：' + name);
+    askText('新建分组', '', 12).then(function (name) {
+      if (name === null) return;
+      name = String(name).trim().slice(0, 12);
+      if (!name) return;
+      if (groups.indexOf(name) >= 0) { toast('分组已存在'); return; }
+      groups.push(name);
+      saveGroups();
+      render();
+      toast('已新建分组：' + name);
+    });
   }
 
   /* ---------- 统计 ---------- */
@@ -971,6 +985,74 @@
     toastTimer = setTimeout(function () { el.toast.hidden = true; }, 2400);
   }
 
+  /* ---------- 通用输入 / 确认弹窗 ----------
+     WebView2 不支持 window.prompt()，confirm() 的行为在各版本也不一致，
+     所以统一用自绘弹窗，返回 Promise，风格与整体玻璃材质一致。 */
+  var dlgResolve = null;
+
+  function openDialog(opts) {
+    if (!el.dlgMask) {
+      // 极端兜底：界面缺少弹窗节点时退回原生（浏览器预览用）
+      if (opts.input) {
+        var v = window.prompt(opts.title || '', opts.value || '');
+        return Promise.resolve(v === null ? null : v);
+      }
+      return Promise.resolve(window.confirm(opts.title || '') ? true : false);
+    }
+    return new Promise(function (resolve) {
+      dlgResolve = resolve;
+      el.dlgTitle.textContent = opts.title || '';
+      var hasDesc = !!(opts.desc && opts.desc.length);
+      el.dlgDesc.hidden = !hasDesc;
+      el.dlgDesc.textContent = hasDesc ? opts.desc : '';
+      el.dlgInput.hidden = !opts.input;
+      if (opts.input) {
+        el.dlgInput.value = opts.value || '';
+        el.dlgInput.maxLength = opts.maxlength || 16;
+      }
+      el.dlgOk.textContent = opts.okText || '确定';
+      el.dlgMask.hidden = false;
+      if (opts.input) {
+        setTimeout(function () { el.dlgInput.focus(); el.dlgInput.select(); }, 30);
+      }
+    });
+  }
+
+  function closeDialog(result) {
+    if (el.dlgMask) el.dlgMask.hidden = true;
+    var r = dlgResolve;
+    dlgResolve = null;
+    if (r) r(result);
+  }
+
+  function askText(title, value, maxlength) {
+    return openDialog({ title: title, input: true, value: value || '', maxlength: maxlength || 16 });
+  }
+
+  function askConfirm(title, desc, okText) {
+    return openDialog({ title: title, desc: desc, input: false, okText: okText || '确定' });
+  }
+
+  if (el.dlgOk) {
+    el.dlgOk.addEventListener('click', function () {
+      var inputShown = el.dlgInput && !el.dlgInput.hidden;
+      closeDialog(inputShown ? el.dlgInput.value : true);
+    });
+  }
+  if (el.dlgCancel) {
+    el.dlgCancel.addEventListener('click', function () { closeDialog(null); });
+  }
+  if (el.dlgMask) {
+    el.dlgMask.addEventListener('click', function (e) {
+      if (e.target === el.dlgMask) closeDialog(null);
+    });
+  }
+  if (el.dlgInput) {
+    el.dlgInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); el.dlgOk.click(); }
+    });
+  }
+
   /* ---------- 日期占位状态 ---------- */
   function syncDateField() {
     var field = el.inputDate.closest('.date-field');
@@ -1111,16 +1193,17 @@
   }
 
   function askToUpdate(data) {
-    var notes = data.notes ? '\n\n更新内容：\n' + data.notes : '';
-    var msg = '发现新版本 v' + data.version + '（当前 v' + currentVersion + '）' + notes +
-              '\n\n是否打开下载页面？';
-    if (window.confirm(msg)) {
+    var desc = '当前 v' + currentVersion + ' → 最新 v' + data.version +
+               (data.notes ? '\n\n' + data.notes : '') +
+               '\n\n是否打开下载页面？';
+    askConfirm('发现新版本 v' + data.version, desc, '去下载').then(function (ok) {
+      if (!ok) return;
       var dl = data.downloads || {};
       // 优先用实测可用的加速镜像（jsDelivr 不代理 exe，GitHub raw 大文件常被拦）
       var url = dl.ghproxy || dl.ghfast || dl.github || dl.jsdelivr ||
                 ('https://github.com/' + REPO + '/releases/latest');
       callApi('open_url', url);
-    }
+    });
   }
 
   function initVersion() {
@@ -1185,21 +1268,24 @@
       var incoming = Array.isArray(data) ? data : data.todos;
       if (!Array.isArray(incoming)) { toast('文件里没有待办数据'); return; }
 
-      if (todos.length && !window.confirm('导入会覆盖当前的 ' + todos.length + ' 条待办，继续？')) {
-        return;
-      }
+      var go = todos.length
+        ? askConfirm('覆盖当前待办？', '导入会替换当前的 ' + todos.length + ' 条待办，此操作不可撤销。', '导入')
+        : Promise.resolve(true);
 
-      todos = incoming;
-      if (!Array.isArray(data.groups)) {
-        groups = (groups && groups.length) ? groups : DEFAULT_GROUPS.slice();
-      } else {
-        groups = data.groups.slice();
-      }
-      ensureGroups();
-      save();
-      saveGroups();
-      render();
-      toast('已导入 ' + todos.length + ' 条待办');
+      go.then(function (ok) {
+        if (!ok) return;
+        todos = incoming;
+        if (!Array.isArray(data.groups)) {
+          groups = (groups && groups.length) ? groups : DEFAULT_GROUPS.slice();
+        } else {
+          groups = data.groups.slice();
+        }
+        ensureGroups();
+        save();
+        saveGroups();
+        render();
+        toast('已导入 ' + todos.length + ' 条待办');
+      });
     });
   }
 
@@ -1261,6 +1347,11 @@
   });
 
   document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && el.dlgMask && !el.dlgMask.hidden) {
+      e.preventDefault();
+      closeDialog(null);
+      return;
+    }
     if (e.key === 'Escape' && !el.modalMask.hidden) closeModal();
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addTodo(); }
   });
@@ -1285,6 +1376,108 @@
     el.appMenu.hidden = true;
     restore();
   });
+
+  /* ---------- 重命名 / 贴边 / 尺寸 ---------- */
+  if (el.menuRename) {
+    el.menuRename.addEventListener('click', function () {
+      el.appMenu.hidden = true;
+      askText('应用名称', winState.app_name || 'xixiの待办', 16).then(function (name) {
+        if (name === null) return;
+        name = String(name).trim().slice(0, 16);
+        if (!name) return;
+        callApi('set_app_name', name).then(function (raw) {
+          var st = parseState(raw);
+          if (st) applyWindowState(st); else applyAppName(name);
+          toast('已重命名为「' + name + '」');
+        });
+      });
+    });
+  }
+
+  if (el.menuSnap) {
+    el.menuSnap.addEventListener('click', function () {
+      var next = !winState.snap;
+      el.appMenu.hidden = true;
+      callApi('set_snap', next ? '1' : '').then(function (raw) {
+        var st = parseState(raw);
+        if (st) applySnap(st.snap); else applySnap(next);
+        // 刚打开时就近吸一次，用户能立刻看到效果
+        if (next) callApi('snap_now');
+        toast(next ? '自动贴边：开（拖到边缘松手即吸附）' : '自动贴边：关');
+      });
+    });
+  }
+
+  if (el.menuSize) {
+    el.menuSize.addEventListener('click', function () {
+      var next = (winState.mini_preset + 1) % SIZE_NAMES.length;
+      el.appMenu.hidden = true;
+      callApi('set_mini_preset', next).then(function (raw) {
+        var st = parseState(raw);
+        if (st) applyPreset(st.mini_preset === undefined ? next : st.mini_preset);
+        toast('小卡片尺寸：' + presetName(next));
+      });
+    });
+  }
+
+  // 拖动标题栏结束后触发一次吸附（pywebview 的拖动在前端收不到结束事件，
+  // 但 mouseup 是可以监听的，借此得知“拖完了”）
+  var dragRegion = document.querySelector('.pywebview-drag-region');
+  if (dragRegion) {
+    dragRegion.addEventListener('mouseup', function () {
+      if (!winState.snap) return;
+      setTimeout(function () { callApi('snap_now'); }, 60);
+    });
+  }
+
+  /* ---------- 右下角自由缩放 ---------- */
+  // 无边框窗口没有系统边框，用户没法拖边改大小。
+  // 这里用右下角手柄 + screenX/screenY（屏幕绝对坐标）计算位移：
+  // 用屏幕坐标而不是 clientX，是因为窗口自身在变尺寸，页面坐标会跟着漂移。
+  var rz = null;
+
+  function onResizeMove(e) {
+    if (!rz) return;
+    var w = Math.max(300, Math.round(rz.w + (e.screenX - rz.sx)));
+    var h = Math.max(400, Math.round(rz.h + (e.screenY - rz.sy)));
+    var now = Date.now();
+    if (now - rz.tick < 26) return;
+    rz.tick = now;
+    rz.last = [w, h];
+    callApi('resize_window', [w, h]);
+  }
+
+  function endResize() {
+    if (!rz) return;
+    var last = rz.last;
+    rz = null;
+    document.body.classList.remove('is-resizing');
+    window.removeEventListener('mousemove', onResizeMove);
+    var done = last ? callApi('resize_window', [last[0], last[1]]) : Promise.resolve(null);
+    done.then(function () { return callApi('finish_resize'); }).then(function (raw) {
+      var st = parseState(raw);
+      if (st) applyWindowState(st);
+    });
+  }
+
+  if (el.resizeGrip) {
+    el.resizeGrip.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      rz = {
+        sx: e.screenX,
+        sy: e.screenY,
+        w: window.innerWidth,
+        h: window.innerHeight,
+        tick: 0,
+        last: null
+      };
+      document.body.classList.add('is-resizing');
+      window.addEventListener('mousemove', onResizeMove);
+      window.addEventListener('mouseup', endResize, { once: true });
+    });
+  }
 
   document.addEventListener('click', function (e) {
     if (el.appMenu && !el.appMenu.hidden) {
@@ -1333,7 +1526,13 @@
   });
 
   /* ---------- 窗口控制 ---------- */
-  var winState = { mode: 'mini', on_top: true };
+  var winState = { mode: 'mini', on_top: true, snap: true, app_name: 'xixiの待办', mini_preset: 1 };
+
+  var SIZE_NAMES = ['紧凑', '标准', '宽大'];
+
+  function presetName(idx) {
+    return SIZE_NAMES[idx] || '自定义';
+  }
 
   function parseState(raw) {
     if (!raw) return null;
@@ -1341,6 +1540,41 @@
       var st = typeof raw === 'string' ? JSON.parse(raw) : raw;
       return (st && typeof st === 'object') ? st : null;
     } catch (e) { return null; }
+  }
+
+  function applyAppName(name) {
+    if (!name) return;
+    winState.app_name = name;
+    // 小卡片标题与侧边栏标题联动（窗口标题由 Python 侧同步）
+    var miniTitle = document.querySelector('.minibar-title');
+    if (miniTitle) miniTitle.textContent = name;
+    var brand = document.querySelector('.brand-text h1');
+    if (brand) brand.textContent = name;
+    if (el.inputText) {
+      el.inputText.placeholder = '添加待办…';
+    }
+  }
+
+  function applySnap(on) {
+    winState.snap = !!on;
+    if (el.snapVal) {
+      el.snapVal.textContent = winState.snap ? '开' : '关';
+      el.snapVal.classList.toggle('is-off', !winState.snap);
+    }
+  }
+
+  function applyPreset(idx) {
+    winState.mini_preset = idx;
+    if (el.sizeVal) el.sizeVal.textContent = presetName(idx);
+  }
+
+  function applyWindowState(st) {
+    if (!st) return;
+    applyMode(st.mode === 'full' ? 'full' : 'mini');
+    applyOnTop(st.on_top);
+    applySnap(st.snap);
+    applyPreset(st.mini_preset === undefined ? 1 : st.mini_preset);
+    applyAppName(st.app_name);
   }
 
   function applyMode(mode) {
@@ -1363,10 +1597,7 @@
   function initWindowUi() {
     applyMode(window.innerWidth < 720 ? 'mini' : 'full');
     callApi('get_window_state').then(function (raw) {
-      var st = parseState(raw);
-      if (!st) return;
-      applyMode(st.mode === 'full' ? 'full' : 'mini');
-      applyOnTop(st.on_top);
+      applyWindowState(parseState(raw));
     });
   }
 

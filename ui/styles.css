@@ -897,10 +897,11 @@ body {
    6. 迷你桌面卡片模式
    ============================================================ */
 
-/* 窗口无边框且透明，圆角、阴影全部由页面绘制 */
+/* 窗口无边框，圆角由 Win32 SetWindowRgn 裁窗口实现（透明在 WebView2 上不可靠）。
+   所以卡片必须铺满窗口，不能留边距——否则窗口底色会露出一圈白边。 */
 body.mode-mini {
-  background: transparent;
-  padding: 12px;
+  background: #eef1f8;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
@@ -911,11 +912,12 @@ body.mode-mini .card {
   position: relative;
   flex: 1;
   min-height: 0;
-  border-radius: 22px;
+  /* 圆角由 Windows 11 DWM 绘制（抗锯齿 + 系统投影）。
+     这里必须给 0：窗口本身不透明，若页面再画一次圆角，
+     圆角与窗口边界之间的区域会露出页面底色，形成缺口。 */
+  border-radius: 0;
   overflow: hidden;
-  box-shadow:
-    0 18px 50px -12px rgba(21, 31, 66, 0.42),
-    0 2px 8px rgba(21, 31, 66, 0.14);
+  box-shadow: none;
 }
 
 /* 背景从 fixed 改为随卡片裁剪，光斑才能被裁进圆角内 */
@@ -1167,8 +1169,8 @@ body.mode-mini .mini-foot {
    7. 完整模式下的迷你标题栏（无边框窗口仍需要拖动与窗口按钮）
    ============================================================ */
 body.mode-full {
-  /* 透明窗口没有系统圆角，改由 .bg-stage 自己画圆角 */
-  background: transparent;
+  /* 圆角同样由窗口区域裁剪，页面背景铺满即可 */
+  background: #eef1f8;
   display: flex;
   flex-direction: column;
 }
@@ -1176,7 +1178,7 @@ body.mode-full {
 body.mode-full .bg-stage {
   position: fixed;
   inset: 0;
-  border-radius: 14px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -1518,3 +1520,147 @@ body.mode-mini .prio-full { display: none; }
 }
 
 #menuUpdate span { flex: 1; text-align: left; }
+
+/* 菜单项右侧的状态值（开/关、尺寸档） */
+.am-val {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 6px;
+}
+#menuRename span, #menuSnap span, #menuSize span { flex: 1; text-align: left; }
+
+/* ============================================================
+   9. 通用输入 / 确认弹窗（替代 window.prompt）
+   ============================================================ */
+.dlg-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(18, 24, 46, 0.34);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fade-in 0.18s var(--ease) both;
+}
+
+.dlg {
+  width: 100%;
+  max-width: 268px;
+  padding: 18px 18px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    0 26px 60px -18px rgba(21, 31, 66, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  animation: dlg-in 0.2s var(--ease) both;
+}
+@keyframes dlg-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.dlg-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+
+.dlg-desc {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.dlg-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid rgba(23, 27, 46, 0.1);
+  border-radius: 11px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.dlg-input:focus {
+  border-color: rgba(47, 107, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.14);
+}
+
+.dlg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dlg-btn {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(23, 27, 46, 0.06);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 0.16s var(--ease), color 0.16s var(--ease), transform 0.12s var(--ease);
+}
+.dlg-btn:hover { background: rgba(23, 27, 46, 0.11); color: var(--ink); }
+.dlg-btn:active { transform: scale(0.97); }
+
+.dlg-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 16px -8px rgba(47, 107, 255, 0.9);
+}
+.dlg-primary:hover { background: #2560ee; color: #fff; }
+
+/* 关掉时贴边状态显示为灰色 */
+.am-val.is-off { color: var(--ink-3); background: rgba(23, 27, 46, 0.07); }
+
+/* ============================================================
+   10. 右下角缩放手柄（无边框窗口的自由改尺寸入口）
+   ============================================================ */
+.resize-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 40;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: end;
+  padding: 0 4px 5px 0;
+  color: rgba(23, 27, 46, 0.20);
+  cursor: nwse-resize;
+  /* 常驻淡显，否则用户永远发现不了这里能拖 */
+  opacity: 0.55;
+  transition: opacity 0.2s var(--ease), color 0.2s var(--ease);
+}
+.resize-grip svg { width: 11px; height: 11px; }
+.resize-grip:hover { opacity: 1; color: rgba(23, 27, 46, 0.55); }
+
+/* 完整模式不需要（它自己是固定布局） */
+body.mode-full .resize-grip { display: none; }
+
+/* 拖拽缩放期间禁用过渡与文字选中，避免抖动 */
+body.is-resizing { user-select: none; cursor: nwse-resize; }
+body.is-resizing * { cursor: nwse-resize !important; }
+body.is-resizing .todo-item { transition: none; }

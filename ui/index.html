@@ -51,7 +51,7 @@
 <header class="minibar">
   <div class="minibar-drag pywebview-drag-region">
     <span class="minibar-dot"></span>
-    <span class="minibar-title">xixi 待办</span>
+    <span class="minibar-title">xixiの待办</span>
     <span class="minibar-count" id="miniCount">0</span>
   </div>
   <div class="minibar-actions">
@@ -98,6 +98,21 @@
     导入恢复
   </button>
   <div class="am-sep"></div>
+  <button class="am-item" id="menuRename">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.6l3.9 3.9M4.5 19.5l.9-3.9L16 5a1.8 1.8 0 012.5 0l.5.5a1.8 1.8 0 010 2.5L8.4 18.6l-3.9.9z"/></svg>
+    重命名应用
+  </button>
+  <button class="am-item" id="menuSnap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    <span>自动贴边</span>
+    <em class="am-val" id="snapVal">开</em>
+  </button>
+  <button class="am-item" id="menuSize">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="M8.5 12h7M12 8.5v7"/></svg>
+    <span>小卡片尺寸</span>
+    <em class="am-val" id="sizeVal">标准</em>
+  </button>
+  <div class="am-sep"></div>
   <button class="am-item" id="menuUpdate">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 10-2.6 5.9"/><path d="M20 5v6.5h-6.5"/></svg>
     <span id="updateLabel">检查更新</span>
@@ -123,7 +138,7 @@
         </svg>
       </div>
       <div class="brand-text">
-        <h1>xixiの待办清单</h1>
+        <h1>xixiの待办</h1>
         <p id="todayLabel">—</p>
       </div>
     </div>
@@ -260,6 +275,13 @@
   </main>
 </div>
 
+  <!-- 右下角缩放手柄：无边框窗口没有系统边框，靠它自由拖拽改尺寸 -->
+  <div class="resize-grip" id="resizeGrip" title="拖动调整大小">
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+      <path d="M11 6.2 6.2 11M11 10.2 10.2 11"/>
+    </svg>
+  </div>
+
 </div><!-- /.card -->
 
 <!-- ===== 编辑弹窗 ===== -->
@@ -326,6 +348,19 @@
         删除
       </button>
       <button class="primary-btn" id="editSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 通用输入 / 确认弹窗（WebView2 不支持 window.prompt，故自绘） ===== -->
+<div class="dlg-mask" id="dlgMask" hidden>
+  <div class="dlg" role="dialog" aria-modal="true">
+    <p class="dlg-title" id="dlgTitle">标题</p>
+    <p class="dlg-desc" id="dlgDesc" hidden></p>
+    <input class="dlg-input" id="dlgInput" type="text" maxlength="16" autocomplete="off" spellcheck="false">
+    <div class="dlg-actions">
+      <button class="dlg-btn" id="dlgCancel">取消</button>
+      <button class="dlg-btn dlg-primary" id="dlgOk">确定</button>
     </div>
   </div>
 </div>
