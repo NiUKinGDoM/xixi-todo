@@ -1003,11 +1003,13 @@
      任何一个成功即返回。全部失败则视为网络问题，不打扰用户。 */
 
   var REPO = 'NiUKinGDoM/xixi-todo';
+  // 顺序说明：raw 永远是最新的，放第一位保证发版后立刻生效
+  // （jsDelivr 对 @main 有最长 12 小时缓存，放后面做兜底）
   var UPDATE_SOURCES = [
+    'https://raw.githubusercontent.com/' + REPO + '/main/version.json',
     'https://cdn.jsdelivr.net/gh/' + REPO + '@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
-    'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
-    'https://raw.githubusercontent.com/' + REPO + '/main/version.json'
+    'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/version.json'
   ];
 
   var updateState = { checking: false, latest: null, hasUpdate: false };
