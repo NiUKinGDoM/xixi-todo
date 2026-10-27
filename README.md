@@ -1,4 +1,4 @@
-# xixiの待办清单 · Liquid Glass 桌面应用
+# xixiの待办清单·Liquid Glass桌面应用
 
 Windows 桌面待办清单，采用 Apple Liquid Glass（液态玻璃）视觉语言。
 
