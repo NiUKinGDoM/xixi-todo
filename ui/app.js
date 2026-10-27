@@ -923,11 +923,13 @@
   var REPO = 'NiUKinGDoM/xixi-todo';
   // 顺序说明：raw 永远是最新的，放第一位保证发版后立刻生效
   // （jsDelivr 对 @main 有最长 12 小时缓存，放后面做兜底）
+  // 顺序有讲究：jsDelivr 对 @main 有最长 12 小时缓存，发版后可能还返回旧清单，
+  // 所以先问两个 GitHub 反代，raw 在前一台机器上常被拦，放最后兜底。
   var UPDATE_SOURCES = [
-    'https://raw.githubusercontent.com/' + REPO + '/main/version.json',
-    'https://cdn.jsdelivr.net/gh/' + REPO + '@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
-    'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/version.json'
+    'https://ghfast.top/https://raw.githubusercontent.com/' + REPO + '/main/version.json',
+    'https://cdn.jsdelivr.net/gh/' + REPO + '@main/version.json',
+    'https://raw.githubusercontent.com/' + REPO + '/main/version.json'
   ];
 
   var updateState = { checking: false, latest: null, hasUpdate: false };
@@ -977,6 +979,11 @@
       var url = UPDATE_SOURCES[i++];
       return fetchWithTimeout(url, 6000).then(function (data) {
         if (!data || !data.version) throw new Error('bad manifest');
+        // 镜像缓存可能给出比本地还旧的清单，别据此判定「已是最新」，
+        // 换下一个源继续问，直到拿到不旧于本地的版本。
+        if (currentVersion && compareVer(data.version, currentVersion) < 0) {
+          throw new Error('stale manifest ' + data.version);
+        }
         return data;
       }).catch(function () { return next(); });
     }
