@@ -1,7 +1,7 @@
 {
-  "version": "1.5.5",
-  "date": "2026-10-27",
-  "notes": "打开应用后自动检查更新，有新版本直接弹出来（同一版本一天只提醒一次）；「检查更新」点下去立刻转圈，不再出现点了没反应、得连点几下",
+  "version": "1.5.6",
+  "date": "2026-10-29",
+  "notes": "已完成任务的划线加深加粗，一眼能看出划掉了；进度条不再把置顶的事算进去（置顶是长期挂着的，算进去永远走不满）；删掉没用的「卡片底色浓度」滑块；切换动画重做：列表换位平滑滑过去、设置页和弹窗补上退场动画，小卡片里常驻的模糊光斑也停了（省电、掉帧少）",
   "downloads": {
     "mirrors": [
       "https://ghfast.top/https://github.com/NiUKinGDoM/xixi-todo/releases/latest/download/xixi-todo-setup.exe",

@@ -93,8 +93,6 @@
     setNameSave: $('setNameSave'),
     setSnap: $('setSnap'),
     setTop: $('setTop'),
-    setCardAlpha: $('setCardAlpha'),
-    alphaVal: $('alphaVal'),
     sizeSeg: $('setSize'),
     setCount: $('setCount'),
     collapsedMark: $('collapsedMark'),
@@ -473,13 +471,55 @@
   function render() {
     var list = visibleTodos();
 
+    // 渲染前记下每一项在屏幕上的位置：
+    //  · 只有真正新加的条目才播「下落进场」，否则每次勾选、置顶都让整列表重播动画，
+    //    看着像在抖；
+    //  · 老条目位置变了就做一次 FLIP 位移动画（先瞬移到旧位置，再滑回新位置），
+    //    置顶、拖动排序、勾选后换位都是滑过去而不是瞬间跳。
+    var before = new Map();
+    for (var i = 0; i < el.list.children.length; i++) {
+      var old = el.list.children[i];
+      before.set(old.getAttribute('data-id'), old.getBoundingClientRect().top);
+    }
+
     el.list.innerHTML = '';
-    list.forEach(function (t) { el.list.appendChild(buildItem(t)); });
+    list.forEach(function (t) {
+      var li = buildItem(t);
+      if (!before.has(t.id)) li.classList.add('is-enter');
+      el.list.appendChild(li);
+    });
 
     el.empty.hidden = list.length > 0;
     el.list.style.display = list.length ? '' : 'none';
 
+    flipIn(before);
     updateStats();
+  }
+
+  function flipIn(before) {
+    if (!before.size) return;
+    var nodes = el.list.children;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var prevTop = before.get(n.getAttribute('data-id'));
+      if (prevTop === undefined) continue;
+      var dy = prevTop - n.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      n.style.transition = 'none';
+      n.style.transform = 'translateY(' + dy.toFixed(2) + 'px)';
+      (function (node) {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            node.style.transition = 'transform 0.3s cubic-bezier(0.32, 0.9, 0.24, 1)';
+            node.style.transform = 'translateY(0)';
+            setTimeout(function () {
+              node.style.transition = '';
+              node.style.transform = '';
+            }, 340);
+          });
+        });
+      })(n);
+    }
   }
 
   function tag(cls, text) {
@@ -671,16 +711,32 @@
     setCount(el.countOverdue, overdue);
     setCount(el.countDone, done);
 
-    var pct = all ? Math.round((done / all) * 100) : 0;
+    // 进度条只算「普通待办」：置顶是长期挂着的，算进去永远走不到 100%
+    var pinnedN = 0, sTotal = 0, sDone = 0;
+    todos.forEach(function (x) {
+      if (x.pinned) { pinnedN++; return; }
+      sTotal++;
+      if (x.done) sDone++;
+    });
+
+    var pct = sTotal ? Math.round((sDone / sTotal) * 100) : 0;
     el.progressPct.textContent = pct + '%';
-    el.progressFill.style.width = pct + '%';
-    el.progressNote.textContent = all
-      ? '已完成 ' + done + ' / ' + all + ' 项' + (overdue ? '，' + overdue + ' 项已逾期' : '')
-      : '还没有待办，先添加一条吧';
+    setFill(el.progressFill, pct);
+    var note;
+    if (sTotal) {
+      note = '已完成 ' + sDone + ' / ' + sTotal + ' 项';
+      if (pinnedN) note += '，' + pinnedN + ' 项置顶不计入';
+      if (overdue) note += '，' + overdue + ' 项已逾期';
+    } else if (pinnedN) {
+      note = '置顶的 ' + pinnedN + ' 项不计入进度';
+    } else {
+      note = '还没有待办，先添加一条吧';
+    }
+    el.progressNote.textContent = note;
 
     if (el.miniCount) setCount(el.miniCount, pending);
-    if (el.miniFill) el.miniFill.style.width = pct + '%';
-    if (el.miniStat) el.miniStat.textContent = done + ' / ' + all + ' 完成';
+    setFill(el.miniFill, pct);
+    if (el.miniStat) el.miniStat.textContent = sDone + ' / ' + sTotal + ' 完成';
 
     el.heroTitle.textContent = heroTitleText();
     var shown = visibleTodos().length;
@@ -698,6 +754,13 @@
     node.textContent = n;
     if (n === 0) node.classList.add('is-zero');
     else node.classList.remove('is-zero');
+  }
+
+  // 进度条只动 transform（合成层），改 width 会触发父级连续 layout，切筛选时掉帧
+  function setFill(node, pct) {
+    if (!node) return;
+    var scale = Math.max(0, Math.min(100, pct || 0)) / 100;
+    node.style.transform = 'scaleX(' + scale + ')';
   }
 
   /* ---------- 操作 ---------- */
@@ -818,17 +881,33 @@
     syncSeg(el.editPrioritySeg, editPriority);
     syncPlainEmpty();
 
+    el.modalMask.classList.remove('is-closing');
     el.modalMask.hidden = false;
     // 弹窗是整屏操作，标题栏（图钉/最小化/关闭）留在上面又挡又乱
     document.body.classList.add('modal-open');
     setTimeout(function () { el.editText.focus(); el.editText.select(); }, 60);
   }
 
+  // 遮罩退场：先淡出再把 hidden 立起来，避免「啪」地硬切
+  function fadeOutMask(mask, ms) {
+    if (!mask || mask.hidden) return null;
+    mask.classList.add('is-closing');
+    return function () {
+      // 退场途中又被打开（比如连点两下）就别藏了
+      if (!mask.classList.contains('is-closing')) return;
+      mask.classList.remove('is-closing');
+      mask.hidden = true;
+    };
+  }
+
   function closeModal() {
-    el.modalMask.hidden = true;
-    document.body.classList.remove('modal-open');
+    if (el.modalMask.hidden) return;
+    var finish = fadeOutMask(el.modalMask, 150);
     editingId = null;
     resetIdleTimer();
+    // 遮罩 z-index 本来就压在标题栏上面，退场期间不会露出来，可以立即恢复
+    document.body.classList.remove('modal-open');
+    setTimeout(finish, 150);
   }
 
   function findTodo(id) {
@@ -898,6 +977,7 @@
         el.dlgInput.maxLength = opts.maxlength || 16;
       }
       el.dlgOk.textContent = opts.okText || '确定';
+      el.dlgMask.classList.remove('is-closing');
       el.dlgMask.hidden = false;
       if (opts.input) {
         setTimeout(function () { el.dlgInput.focus(); el.dlgInput.select(); }, 30);
@@ -906,7 +986,8 @@
   }
 
   function closeDialog(result) {
-    if (el.dlgMask) el.dlgMask.hidden = true;
+    var finish = fadeOutMask(el.dlgMask, 140);
+    if (finish) setTimeout(finish, 140);
     var r = dlgResolve;
     dlgResolve = null;
     if (r) r(result);
@@ -1567,21 +1648,34 @@
   el.clearDoneBtn.addEventListener('click', clearDone);
 
   /* ---------- 设置页 ---------- */
+  var settingsClosing = false;
+
   function openSettings() {
     if (!el.settingsPanel) return;
+    settingsClosing = false;
+    el.settingsPanel.classList.remove('is-closing');
     el.settingsPanel.hidden = false;
     document.body.classList.add('is-settings');
     renderSettings();
   }
 
   function closeSettings() {
-    if (!el.settingsPanel) return;
-    el.settingsPanel.hidden = true;
+    if (!el.settingsPanel || el.settingsPanel.hidden || settingsClosing) return;
+    settingsClosing = true;
     document.body.classList.remove('is-settings');
     resetIdleTimer();
-    // 下次进来从头看，别停在上次滚到的位置
-    var body = el.settingsPanel.querySelector('.settings-body');
-    if (body) body.scrollTop = 0;
+    // 放完退场动画再真正隐藏：直接 hidden 会「啪」一下消失，跟进场不对称
+    el.settingsPanel.classList.add('is-closing');
+    setTimeout(function () {
+      settingsClosing = false;
+      // 退场途中又被打开（点了返回立刻又进设置）就别藏了
+      if (!el.settingsPanel.classList.contains('is-closing')) return;
+      el.settingsPanel.classList.remove('is-closing');
+      el.settingsPanel.hidden = true;
+      // 下次进来从头看，别停在上次滚到的位置
+      var body = el.settingsPanel.querySelector('.settings-body');
+      if (body) body.scrollTop = 0;
+    }, 175);
   }
 
   function renderSettings() {
@@ -1598,39 +1692,13 @@
       }
     }
     if (el.setAutoStart) el.setAutoStart.classList.toggle('is-on', winState.autostart);
-    if (el.setCardAlpha) {
-    // 纯 CSS 变量，实时生效；70ms 节流避免高频调后端
-    var alphaTimer = null;
-    var applyCardAlpha = function (v) {
-      winState.card_alpha = v;
-      document.documentElement.style.setProperty('--card-alpha', String(v / 100));
-      if (el.alphaVal) el.alphaVal.textContent = v + '%';
-    };
-    el.setCardAlpha.addEventListener('input', function () {
-      var v = Number(el.setCardAlpha.value) || 0;
-      applyCardAlpha(v);
-      if (alphaTimer) return;
-      alphaTimer = setTimeout(function () {
-        alphaTimer = null;
-        callApi('set_card_alpha', String(el.setCardAlpha.value));
-      }, 70);
-    });
-    el.setCardAlpha.addEventListener('change', function () {
-      callApi('set_card_alpha', String(el.setCardAlpha.value));
-    });
-    applyCardAlpha(winState.card_alpha);
-  }
-
-  if (el.sizeSeg) {
+    if (el.sizeSeg) {
       var btns = el.sizeSeg.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
         btns[i].classList.toggle('is-active',
           Number(btns[i].getAttribute('data-preset')) === winState.mini_preset);
       }
     }
-    if (el.setCardAlpha) el.setCardAlpha.value = String(winState.card_alpha);
-    if (el.alphaVal) el.alphaVal.textContent = String(winState.card_alpha) + '%';
-    document.documentElement.style.setProperty('--card-alpha', String((winState.card_alpha || 0) / 100));
     if (el.setCount) el.setCount.textContent = String(todos.length);
   }
 
@@ -1926,7 +1994,7 @@
     app_name: 'xixiの待办', mini_preset: 1,
     collapsed: false, collapse_edge: '',
     collapse_min: true, auto_collapse: false,
-    close_action: 'quit', autostart: false, card_alpha: 100
+    close_action: 'quit', autostart: false
   };
 
   var SIZE_NAMES = ['紧凑', '标准', '宽大'];
@@ -1982,7 +2050,6 @@
     if (typeof st.auto_collapse === 'boolean') winState.auto_collapse = st.auto_collapse;
     if (typeof st.close_action === 'string') winState.close_action = st.close_action;
     if (typeof st.autostart === 'boolean') winState.autostart = st.autostart;
-    if (typeof st.card_alpha === 'number') winState.card_alpha = st.card_alpha;
 
     applyMode(st.mode === 'full' ? 'full' : 'mini');
     applyOnTop(st.on_top);

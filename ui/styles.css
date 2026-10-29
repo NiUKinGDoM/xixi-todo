@@ -350,11 +350,15 @@ body {
 }
 .progress-fill {
   height: 100%;
-  width: 0%;
+  width: 100%;
   border-radius: 99px;
   background: linear-gradient(90deg, #4b7bff 0%, #35c08a 100%);
   box-shadow: 0 0 12px -2px rgba(53, 192, 138, 0.7);
-  transition: width 0.55s var(--ease);
+  /* 只做合成层上的 scaleX，避免每帧 layout */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.55s var(--ease);
+  will-change: transform;
 }
 .progress-note {
   margin: 9px 0 0;
@@ -650,8 +654,9 @@ body {
   background: rgba(255, 255, 255, 0.26);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
   transition: background 0.22s var(--ease), transform 0.18s var(--ease), box-shadow 0.22s var(--ease), opacity 0.3s var(--ease);
-  animation: item-in 0.42s var(--ease) both;
 }
+/* 只有新加的条目才播进场，其余位置变化交给 JS 的 FLIP 补间 */
+.todo-item.is-enter { animation: item-in 0.32s var(--ease) both; }
 @keyframes item-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.985); }
   to   { opacity: 1; transform: none; }
@@ -660,8 +665,17 @@ body {
   background: rgba(255, 255, 255, 0.46);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px -10px rgba(20, 30, 70, 0.4);
 }
-.todo-item.is-done { opacity: 0.56; }
-.todo-item.is-done .todo-title { text-decoration: line-through; text-decoration-color: rgba(23, 27, 46, 0.32); }
+/* 已完成：不再整体压暗整行（父级 opacity 会把删除线一起变淡，看着像没划线），
+   改成只降文字与元信息的对比度，钩子保持实心，划掉的那条线自己用深色 2px */
+.todo-item.is-done .todo-title {
+  /* 文字压淡、划线加深加粗：反差拉开，一眼能看出这条已经划掉了 */
+  color: rgba(23, 27, 46, 0.50);
+  text-decoration: line-through;
+  text-decoration-color: #131627;
+  text-decoration-thickness: 2px;
+  text-decoration-skip-ink: none;
+}
+.todo-item.is-done .todo-meta { opacity: 0.58; }
 .todo-item.is-overdue { background: rgba(255, 90, 95, 0.14); }
 
 /* 勾选框 */
@@ -780,6 +794,14 @@ body {
   animation: fade-in 0.22s var(--ease) both;
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* 遮罩层统一退场：直接 hidden 是硬切，看着像闪一下 */
+.modal-mask.is-closing,
+.dlg-mask.is-closing {
+  animation: fade-out 0.15s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
 
 .modal {
   width: 420px;
@@ -1146,10 +1168,12 @@ body.mode-mini .mini-foot {
 }
 .mini-fill {
   height: 100%;
-  width: 0%;
+  width: 100%;
   border-radius: 99px;
   background: linear-gradient(90deg, #4b7bff 0%, #35c08a 100%);
-  transition: width 0.5s var(--ease);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.5s var(--ease);
 }
 .mini-stat {
   font-size: 10.5px;
@@ -1487,6 +1511,15 @@ body.is-resizing .todo-item { transition: none; }
 @keyframes set-sheet {
   from { opacity: 0; transform: translateY(14px) scale(0.99); }
   to   { opacity: 1; transform: none; }
+}
+/* 退场：以前一点返回就“啪”地消失，跟进场不对称 */
+.settings.is-closing {
+  animation: set-sheet-out 0.18s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+@keyframes set-sheet-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(10px) scale(0.994); }
 }
 
 /* 底部渐隐，避免滚动时内容被硬切 */
@@ -2553,31 +2586,6 @@ input[type="time"].is-empty::-webkit-datetime-edit-fields-wrapper {
   font-variant-numeric: tabular-nums;
 }
 
-.opacity-range {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 20px;
-  background: transparent;
-  cursor: pointer;
-}
-.opacity-range::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 99px;
-  background: #e9edf4;
-}
-.opacity-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid var(--accent);
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.22);
-}
-.opacity-range:active::-webkit-slider-thumb { transform: scale(1.08); }
-
 /* 置顶：默认半透明，置顶后实心强调色 */
 .pin-btn { opacity: 0; transition: opacity 0.16s var(--ease), color 0.16s var(--ease); }
 .todo-item:hover .pin-btn,
@@ -2643,22 +2651,20 @@ input[type="time"].is-empty::-webkit-datetime-edit-fields-wrapper {
 .todo-main { flex: 1; min-width: 0; }
 
 /* ============================================================
-   卡片底色浓度
-   --card-alpha 由设置里的滑块实时改（0 = 底色消失，1 = 纯白）。
-   只作用于小卡片的「底」，条目、输入框、胶囊保持白色，
-   所以文字对比度永远够。
+   小卡片底色
+   「卡片底色浓度」滑块已删：窗口本身不透明，调出来的只是一块灰白，
+   看不到桌面，等于没用。这里固定纯白，文字对比度最高。
+   （真透明试过了：色键能透但整个窗口点不动，所以放弃，见 app.py 注释）
    ============================================================ */
-:root { --card-alpha: 1; }
-
-body.mode-mini {
-  --card-bg: rgba(255, 255, 255, var(--card-alpha));
-}
 body.mode-mini .card,
 body.mode-mini .minibar,
 body.mode-mini .mini-foot,
 body.mode-mini .hero {
-  background: var(--card-bg);
+  background: rgba(255, 255, 255, 1);
 }
+
+/* 小卡片里把光斑动画停掉：4 层 88px 高斯模糊常驻重绘，是掉帧的主要来源 */
+body.mode-mini .bg-orb { animation: none; }
 
 /* ============================================================
    检查更新：点下去立刻有反馈

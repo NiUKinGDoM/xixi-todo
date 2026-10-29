@@ -189,7 +189,10 @@
       document.getElementById('editText').value = '改名后的任务';
       document.getElementById('editSave').click();
       var ok = A.todos.some(function (x) { return x.title === '改名后的任务'; });
-      return (ok && document.getElementById('modalMask').hidden === true) ? true : '未生效';
+      var mask = document.getElementById('modalMask');
+      // 关闭走退场动画，hidden 会晚 150ms 才立起来，这里验「已进入退场」
+      var closing = mask.classList.contains('is-closing') || mask.hidden === true;
+      return (ok && closing) ? true : '内容=' + ok + ' 退场=' + closing;
     });
     t('弹窗内删除生效', function () {
       var item = A.todos[0];
@@ -201,7 +204,8 @@
       var item = A.todos[0];
       itemEl(item.id).querySelector('.edit-btn').click();
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      return document.getElementById('modalMask').hidden === true ? true : '弹窗未关闭';
+      var mask = document.getElementById('modalMask');
+      return (mask.hidden === true || mask.classList.contains('is-closing')) ? true : '弹窗未关闭';
     });
 
     /* ---- 进度与统计 ---- */
@@ -212,9 +216,12 @@
       return document.getElementById('progressPct').textContent === pct + '%' ? true : 'pct=' + document.getElementById('progressPct').textContent;
     });
     t('进度条宽度同步', function () {
-      var w = document.getElementById('progressFill').style.width;
-      var pctText = document.getElementById('progressPct').textContent;
-      return w === pctText ? true : 'width=' + w + ' pct=' + pctText;
+      // 进度条改成 scaleX（合成层动画），不再改 width
+      var tf = document.getElementById('progressFill').style.transform || '';
+      var m = /scaleX\(([\d.]+)\)/.exec(tf);
+      var pct = parseInt(document.getElementById('progressPct').textContent, 10);
+      var scale = m ? Math.round(Number(m[1]) * 100) : -1;
+      return scale === pct ? true : 'transform=' + tf + ' pct=' + pct;
     });
     t('各分类计数正确', function () {
       var all = A.todos.length;
@@ -370,9 +377,11 @@
       return shown === String(pending) ? true : 'DOM=' + shown + ' 期望=' + pending;
     });
     t('迷你进度条与百分比一致', function () {
-      var w = document.getElementById('miniFill').style.width;
-      var pct = document.getElementById('progressPct').textContent;
-      return w === pct ? true : 'width=' + w + ' pct=' + pct;
+      var tf = document.getElementById('miniFill').style.transform || '';
+      var m = /scaleX\(([\d.]+)\)/.exec(tf);
+      var pct = parseInt(document.getElementById('progressPct').textContent, 10);
+      var scale = m ? Math.round(Number(m[1]) * 100) : -1;
+      return scale === pct ? true : 'transform=' + tf + ' pct=' + pct;
     });
     t('小框无横向溢出', function () {
       // 关键：380 宽小框里筛选胶囊与按钮不能被挤出去
@@ -784,7 +793,8 @@
     });
     t('设置页可返回', function () {
       document.getElementById('setBack').click();
-      return document.getElementById('settingsPanel').hidden === true ? true : '未关闭';
+      var p = document.getElementById('settingsPanel');
+      return (p.hidden === true || p.classList.contains('is-closing')) ? true : '未关闭';
     });
 
     /* ---- 版本号比较（更新检查的核心判断） ---- */

@@ -27,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.5"
+VERSION = "1.5.6"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -218,9 +218,6 @@ DEFAULT_STATE = {
     "collapse_min": True,
     "auto_collapse": False,
     "close_action": "quit",
-    # 卡片底色的浓度（纯 CSS，不涉及窗口合成）：
-    # 100 = 纯白卡片，0 = 底色完全消失，只剩内容浮在窗口底色上
-    "card_alpha": 100,
     "mini": {"x": None, "y": None, "w": MINI_W, "h": MINI_H},
     "full": {"x": None, "y": None, "w": FULL_W, "h": FULL_H},
 }
@@ -238,7 +235,6 @@ def load_state() -> dict:
         "collapse_min": DEFAULT_STATE["collapse_min"],
         "auto_collapse": DEFAULT_STATE["auto_collapse"],
         "close_action": "quit",
-        "card_alpha": DEFAULT_STATE["card_alpha"],
         "mini": dict(DEFAULT_STATE["mini"]),
         "full": dict(DEFAULT_STATE["full"]),
     }
@@ -261,11 +257,6 @@ def load_state() -> dict:
                     state["auto_collapse"] = raw["auto_collapse"]
                 if raw.get("close_action") in ("quit", "tray"):
                     state["close_action"] = raw["close_action"]
-                try:
-                    ca = int(raw.get("card_alpha", 100))
-                    state["card_alpha"] = max(0, min(100, ca))
-                except Exception:
-                    pass
                 if isinstance(raw.get("snap"), bool):
                     state["snap"] = raw["snap"]
                 if isinstance(raw.get("app_name"), str) and raw["app_name"].strip():
@@ -590,6 +581,72 @@ _u32.ShowWindow.restype = ctypes.c_bool
 _u32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
 _u32.PostMessageW.restype = ctypes.c_bool
 _u32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+_u32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+_u32.GetWindowLongW.restype = ctypes.c_long
+_u32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+_u32.SetWindowLongW.restype = ctypes.c_long
+_u32.SetLayeredWindowAttributes.argtypes = [
+    ctypes.c_void_p, ctypes.c_uint, ctypes.c_ubyte, ctypes.c_uint,
+]
+_u32.SetLayeredWindowAttributes.restype = ctypes.c_bool
+
+
+# --------------------------------------------------------------------------
+# 真透明窗口（色键打洞）
+# --------------------------------------------------------------------------
+# 背景：WebView2 自己可以被设成透明（create_window(transparent=True)），
+# 但 WinForms 窗体底下还压着一层不透明底色，所以以前只能看到一圈浅灰白边，
+# 永远透不出桌面 —— 这也是「卡片浓度」调到 0% 还是灰白的原因。
+#
+# 实测可行：把窗体底色设成 UI 里绝不会出现的颜色，再用 LWA_COLORKEY 抠掉。
+# 抠完之后 WebView2 的半透明像素是跟桌面直接合成的 ——
+# 卡片能看见壁纸，卡片上的文字仍是实心的黑，不受任何透明度影响。
+#
+# 键色挑 (255,254,255)：跟卡片白只差 1，圆角抗锯齿的混合像素落在近白，
+# 视觉上就是一圈极淡的描边，不会出现品红/绿色毛边。
+COLORKEY_RGB = (255, 254, 255)
+_COLORKEY = COLORKEY_RGB[0] | (COLORKEY_RGB[1] << 8) | (COLORKEY_RGB[2] << 16)
+GWL_EXSTYLE = -20
+WS_EX_LAYERED = 0x00080000
+LWA_COLORKEY = 0x1
+
+
+def enable_colorkey(win) -> bool:
+    """【不要启用】色键打洞式透明。
+
+    视觉上确实能让桌面透出来（实测 corner 像素就是桌面色），代价是分层窗口
+    的命中测试不再包含 WebView2 的内容——整个窗口点不动，按钮、拖拽、滚动全废。
+    WindowFromPoint 在任意点都返回桌面就是证据。留着当存档，别接回去。
+    
+
+    必须在 UI 线程调用（Shown 事件里）——窗体底色是 WinForms 属性，
+    从别的线程改会走 Control.Invoke，撞上正在等锁的 UI 线程就是死锁。
+    """
+    hwnd = _hwnd_of(win)
+    if not hwnd:
+        _log("colorkey: no hwnd")
+        return False
+
+    try:
+        native = getattr(win, "native", None)
+        if native is not None:
+            from System.Drawing import Color  # type: ignore
+
+            native.BackColor = Color.FromArgb(*COLORKEY_RGB)
+    except Exception as exc:
+        _log(f"colorkey backcolor failed: {exc}")
+
+    try:
+        ex = _u32.GetWindowLongW(ctypes.c_void_p(hwnd), GWL_EXSTYLE)
+        _u32.SetWindowLongW(ctypes.c_void_p(hwnd), GWL_EXSTYLE, ex | WS_EX_LAYERED)
+        ok = _u32.SetLayeredWindowAttributes(
+            ctypes.c_void_p(hwnd), _COLORKEY, 0, LWA_COLORKEY
+        )
+        _log(f"colorkey enabled={bool(ok)} hwnd={hwnd}")
+        return bool(ok)
+    except Exception as exc:
+        _log(f"colorkey layered failed: {exc}")
+        return False
 
 
 def win_set_topmost(hwnd: int, on_top: bool) -> bool:
@@ -1069,7 +1126,6 @@ class Api:
                 "auto_collapse": bool(self.state.get("auto_collapse", False)),
                 "close_action": self.state.get("close_action", "quit"),
                 "autostart": is_autostart_enabled(),
-                "card_alpha": int(self.state.get("card_alpha", 100)),
             },
             ensure_ascii=False,
         )
@@ -1139,16 +1195,6 @@ class Api:
         self.state["auto_collapse"] = value
         if value:
             self.state["collapse_min"] = False
-        save_state(self.state)
-        return self.get_window_state()
-
-    def set_card_alpha(self, value) -> str:
-        """小卡片底色浓度。纯前端 CSS 变量，窗口合成完全不参与。"""
-        try:
-            pct = max(0, min(100, int(float(value))))
-        except Exception:
-            return self.get_window_state()
-        self.state["card_alpha"] = pct
         save_state(self.state)
         return self.get_window_state()
 
@@ -1790,8 +1836,13 @@ def main() -> None:
         # 拖拽排序、框选文字、拖右下角缩放也全被抢。
         # 标题栏拖动由 .pywebview-drag-region 单独负责，不依赖 easy_drag。
         easy_drag=False,
-        # transparent 在 WebView2 上并不真正生效（窗口底色仍是不透明浅灰，
-        # 会露出一圈白边），所以关掉它。
+        # 透明这件事试到底了，结论是不行，别再轻易动：
+        #  · transparent=True 只让 WebView2 不画底，WinForms 那层底色还在，
+        #    结果是一圈浅灰白边；
+        #  · 色键打洞（WS_EX_LAYERED + LWA_COLORKEY）视觉上真能透出桌面，
+        #    但分层窗口的命中测试拿不到 WebView2 的内容，整个窗口点不动；
+        #  · Win11 的 DWM backdrop（亚克力）在 WebView2 窗口上不渲染。
+        # 所以保持不透明，卡片靠 CSS 渐变 + 高光做玻璃感。
         transparent=False,
         # shadow=True 会让 pywebview 走 DWM 渲染策略（NCRENDERING=ENABLED），
         # 这是 Windows 11 原生圆角生效的前提，同时带回系统投影。
@@ -1810,6 +1861,7 @@ def main() -> None:
         所以显示后再按目标尺寸 resize 一次，把尺寸拉回设计值。
         """
         _log(f"on_shown: mode={mode} target={width}x{height} collapsed={state.get('collapsed')}")
+
         try:
             window.resize(width, height)
         except Exception as exc:
