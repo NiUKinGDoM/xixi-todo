@@ -845,6 +845,13 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* 内容是编辑弹窗里最重要的东西：给足高度，别让人在一行半里改长任务。
+   小卡片里弹窗正文本来就能滚，多两行换来的空间比多一个字段值。 */
+#editText {
+  min-height: 96px;
+  line-height: 1.55;
+  resize: none;
+}
 .seg-wide { width: 100%; }
 .seg-wide .seg-btn { flex: 1; }
 

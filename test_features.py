@@ -56,7 +56,8 @@ def main() -> int:
 
     side_path.write_text("{坏掉的", encoding="utf-8")
     check("文件损坏时不崩溃", side_store.load() == [])
-    check("损坏文件被备份", any(tmp.glob("side.json.corrupt")))
+    # 备份名带时间戳：固定名第二次损坏会撞车，坏文件反而清不掉
+    check("损坏文件被备份", any(tmp.glob("side.json.*.corrupt")))
 
     api = Api(store, {"window": None}, {
         "mode": "mini", "on_top": True,
@@ -144,7 +145,8 @@ def main() -> int:
     keys = [k for k, _, _, _ in notif]
     check("未到点不提醒定时任务", "a|2026-10-27|09:00" not in keys, str(keys))
     check("无时间的今天任务会提醒", "b|2026-10-27|day" in keys, str(keys))
-    check("逾期任务会提醒", "c|2026-10-26|overdue" in keys, str(keys))
+    # 键里带当天日期：逾期任务应该每天都能再提醒一次，而不是终身只提一次
+    check("逾期任务会提醒", ("c|2026-10-26|overdue|" + today) in keys, str(keys))
     check("已完成任务不提醒", not any(k.startswith("d|") for k in keys), str(keys))
     check("未来任务不提醒", not any(k.startswith("e|") for k in keys), str(keys))
     check("无日期任务不提醒", not any(k.startswith("f|") for k in keys), str(keys))

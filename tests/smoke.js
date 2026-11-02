@@ -207,6 +207,37 @@
       var mask = document.getElementById('modalMask');
       return (mask.hidden === true || mask.classList.contains('is-closing')) ? true : '弹窗未关闭';
     });
+    t('在弹窗里拖选、松手落到遮罩上不会误关', function () {
+      var item = A.todos[0];
+      itemEl(item.id).querySelector('.edit-btn').click();
+      var mask = document.getElementById('modalMask');
+      var dialog = mask.querySelector('.modal');
+      // 按下在弹窗里（开始拖选），松手落到遮罩上 —— 真实浏览器里 click 的目标是遮罩
+      dialog.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      mask.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      var stillOpen = !mask.hidden && !mask.classList.contains('is-closing');
+      // 真正的「点遮罩」：按下和松开都在遮罩上
+      mask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      mask.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      var closed = mask.hidden === true || mask.classList.contains('is-closing');
+      return (stillOpen && closed) ? true : '拖选后=' + stillOpen + ' 点遮罩后=' + closed;
+    });
+
+    /* ---- 外部数据清洗 ---- */
+    t('脏数据不影响列表（null / 字符串 / 缺字段）', function () {
+      var list = A.normalizeTodos([null, 'abc', 42, { title: '没有 id' }, { id: 'k', title: '正常', done: false }]);
+      var okId = list.length === 2 && list[0].id && typeof list[0].id === 'string' &&
+                 list[1].id === 'k' && list[0].title === '没有 id';
+      return okId ? true : JSON.stringify(list);
+    });
+    t('重复 id 会被换成新 id', function () {
+      var list = A.normalizeTodos([{ id: 'dup', title: '一' }, { id: 'dup', title: '二' }]);
+      return (list.length === 2 && list[0].id !== list[1].id) ? true : JSON.stringify(list);
+    });
+    t('非法日期/重复周期被归一', function () {
+      var list = A.normalizeTodos([{ id: 'x', title: 't', due: '2026/13/40', repeat: 'hourly', time: '9:5' }]);
+      return (list[0].due === '' && list[0].repeat === 'none' && list[0].time === '') ? true : JSON.stringify(list[0]);
+    });
 
     /* ---- 进度与统计 ---- */
     t('进度百分比计算', function () {
@@ -690,6 +721,17 @@
     t('语法-解析下周几', function () {
       var r = A.parseQuickInput('开会 下周三');
       return (r.due && A.daysUntil(r.due) > 0) ? true : 'due=' + r.due;
+    });
+    t('语法-下周X 落在 1~7 天内且是那一天', function () {
+      // 旧实现是「最近的周X + 7」：本周那天已过时会多跳一周（周二说下周一 = 13 天后）
+      var r = A.parseQuickInput('交周报 下周一');
+      var d = A.daysUntil(r.due);
+      var wd = new Date(r.due + 'T00:00:00').getDay();
+      return (d >= 1 && d <= 7 && wd === 1) ? true : 'due=' + r.due + ' 天数=' + d + ' 星期=' + wd;
+    });
+    t('语法-非法分钟不当作时间', function () {
+      var r = A.parseQuickInput('开会 9:99');
+      return (!r.time && r.title.indexOf('9:99') >= 0) ? true : JSON.stringify(r);
     });
 
     /* ---- 用语法添加真任务 ---- */

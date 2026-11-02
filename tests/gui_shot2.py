@@ -43,10 +43,9 @@ def main() -> None:
     window = webview.create_window(
         "shot2", url=str(ROOT / "ui" / "index.html"), js_api=api,
         width=380, height=560, min_size=(1, 1), frameless=True,
-        easy_drag=False, transparent=True, shadow=False, on_top=True,
+        easy_drag=False, transparent=False, shadow=True, on_top=True,
     )
     holder["window"] = window
-    window.events.shown += lambda: appmod.enable_colorkey(window)
 
     def runner() -> None:
         try:

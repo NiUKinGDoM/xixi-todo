@@ -27,7 +27,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.6"
+VERSION = "1.5.7"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -182,9 +182,13 @@ class JsonList:
             except Exception as exc:
                 _log(f"load {self.path.name} failed: {exc}")
                 try:
-                    self.path.rename(self.path.with_suffix(".json.corrupt"))
-                except Exception:
-                    pass
+                    # 目标名带时间戳：固定叫 xxx.json.corrupt 的话，
+                    # 第二次损坏时 rename 撞上已存在的备份会失败，
+                    # 坏文件留在原地，之后每次启动都再撞一遍。
+                    stamp = time.strftime("%Y%m%d-%H%M%S")
+                    self.path.rename(self.path.with_name(f"{self.path.name}.{stamp}.corrupt"))
+                except Exception as rename_exc:
+                    _log(f"backup corrupt {self.path.name} failed: {rename_exc}")
                 return []
 
     def save(self, items: list) -> bool:
@@ -336,15 +340,17 @@ def write_autostart(enabled: bool) -> bool:
 
 
 def clamp_to_screen(x: int, y: int, w: int, h: int, margin: int = 8) -> tuple[int, int]:
-    """把窗口位置收进屏幕可见范围。
+    """把窗口位置收进「它所在那块屏幕」的可见范围。
 
     从右下角的小卡片切到 1080x720 的完整视图时，按原位置展开会有一半跑到屏幕外，
     所以每次切换都要按新尺寸重新钳制。
+
+    必须按窗口所在屏幕（_screen_for）算，不能只看 screens[0]：
+    副屏放在主屏左边时 x 是负数，用主屏边界钳制会把窗口直接拽回主屏，
+    用户只会觉得「一切换模式窗口就自己跳走了」。
     """
     try:
-        scr = webview.screens[0]
-        sw, sh = int(scr.width), int(scr.height)
-        sx, sy = int(scr.x), int(scr.y)
+        sx, sy, sw, sh = _screen_for(x, y, w, h)
     except Exception:
         return x, y
 
@@ -724,9 +730,8 @@ def snap_window_to_edge(win, enabled: bool = True) -> tuple[int, int] | None:
         return None
     try:
         x, y, w, h = _window_rect(hwnd)
-        scr = webview.screens[0]
-        sx, sy = int(scr.x), int(scr.y)
-        sw, sh = int(scr.width), int(scr.height)
+        # 多屏：必须用窗口实际所在的那块屏，否则在副屏上贴边会吸到主屏的边上
+        sx, sy, sw, sh = _screen_for(x, y, w, h)
 
         nx, ny = x, y
         if abs(x - sx) <= EDGE_SNAP_PX:
@@ -1075,8 +1080,20 @@ class Api:
             if not result:
                 return ""
             target = result[0] if isinstance(result, (list, tuple)) else result
-            text = Path(target).read_text(encoding="utf-8")
-            _log(f"backup imported from {target}")
+            # 用户可能用记事本另存成 ANSI，或从旧备份（GBK）导过来。
+            # 只认 utf-8 会直接抛异常，前端却提示「已取消导入」，很误导。
+            raw = Path(target).read_bytes()
+            text = ""
+            for enc in ("utf-8-sig", "utf-8", "gbk", "utf-16"):
+                try:
+                    text = raw.decode(enc)
+                    break
+                except Exception:
+                    continue
+            if not text:
+                _log(f"backup import: undecodable file {target}")
+                return ""
+            _log(f"backup imported from {target} ({len(raw)} bytes)")
             return text
         except Exception as exc:
             _log(f"import_backup failed: {exc}")
@@ -1208,13 +1225,13 @@ class Api:
         self._suppress_snap_until = time.monotonic() + seconds
 
     def set_dragging(self, flag) -> bool:
-        if flag:
-            self._user_dragged = True
         """前端拖动窗口期间置位：此时不做自动贴边。
 
         拖动是 JS 逐帧调 move 模拟的，拖动中停顿超过防抖时长会被误判成
         「拖完了」，窗口自己弹到边上。有这面旗子就能分清。
         """
+        if flag:
+            self._user_dragged = True
         self._dragging = bool(flag)
         return self._dragging
 
@@ -1413,6 +1430,19 @@ class Api:
         save_state(self.state)
         return self.get_window_state()
 
+    def set_on_top(self, value) -> str:
+        """显式设置置顶状态。
+
+        开关改成「立即翻转本地状态再发请求」之后，连点两下会发出两个请求。
+        如果再走 toggle，两次翻转互相抵消，窗口状态和界面就对不上了。
+        """
+        on_top = bool(value)
+        self.state["on_top"] = on_top
+        win = self._win()
+        win_set_topmost(_hwnd_of(win) if win is not None else 0, on_top)
+        save_state(self.state)
+        return self.get_window_state()
+
     def minimize_window(self):
         """最小化。
 
@@ -1480,6 +1510,11 @@ class Api:
         win = self._win()
         if win is None or self.state.get("collapsed"):
             return self.get_window_state()
+        # edge 为 None 时以前会掉进 else 分支当成「贴底边」，
+        # 窗口莫名其妙跑到屏幕底下。没有方向就什么都不做。
+        if edge not in ("left", "right", "top", "bottom"):
+            _log(f"collapse_window: bad edge {edge!r}")
+            return self.get_window_state()
 
         try:
             hwnd = _hwnd_of(win)
@@ -1542,7 +1577,9 @@ class Api:
         if mode == "full":
             fallback_w, fallback_h = FULL_W, FULL_H
         else:
-            fallback_w, fallback_h = MINI_PRESETS[self.state.get("mini_preset", 1)][:2]
+            # 用 _mini_size()：mini_preset 可能是 -1（用户自由缩放过），
+            # 直接拿 MINI_PRESETS[-1] 会取到「宽大」那一档，尺寸凭空变掉
+            fallback_w, fallback_h = self._mini_size()
         w = int(slot.get("w") or fallback_w)
         h = int(slot.get("h") or fallback_h)
         self._mute_snap(1.1)
@@ -1656,12 +1693,18 @@ def _send_toast(title: str, message: str) -> bool:
             "CreateToastNotifier(" + ps_quote(APP_NAME) + ").Show("
             "[Windows.UI.Notifications.ToastNotification]::new($t))\n"
         )
-        subprocess.run(
+        r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             timeout=10,
             capture_output=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        # 以前无条件 return True：通知其实没弹出来也当成功，
+        # 到期提醒静默消失，日志里一个字都没有，根本没法排查。
+        if r.returncode != 0:
+            err = (r.stderr or b"").decode("utf-8", "ignore").strip()[:300]
+            _log(f"toast failed rc={r.returncode}: {err}")
+            return False
         return True
     except Exception as exc:
         _log(f"toast failed: {exc}")
@@ -1719,7 +1762,9 @@ def collect_reminders(
         when = t.get("time") or ""
 
         if due < today:
-            key = f"{tid}|{due}|overdue"
+            # 键里必须带「今天」：以前只有 tid|due，逾期任务提醒过一次就
+            # 永远不会再提醒（注释写着每天一次，实现却是终身一次）。
+            key = f"{tid}|{due}|overdue|{today}"
             if key not in notified:
                 out.append((key, "待办已逾期", title, True))
         elif due == today:

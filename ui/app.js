@@ -359,10 +359,16 @@
           if (target === undefined) return arguments[0];
           var d = new Date(today);
           var cur = d.getDay();
-          var delta = (target - cur + 7) % 7;
-          if (which === '下') delta = delta === 0 ? 7 : delta + 7;
-          else if (delta === 0) delta = 7;
-          d.setDate(d.getDate() + delta);
+          if (which === '下') {
+            // 「下周X」= 下一个自然周里的那天。以前是「最近的周X + 7」，
+            // 本周那天已经过了就会多跳一周：周二说「下周一」被算成 13 天后。
+            var dowCur = (cur + 6) % 7;      // 周一=0 … 周日=6
+            var dowTgt = (target + 6) % 7;
+            d.setDate(d.getDate() - dowCur + 7 + dowTgt);
+          } else {
+            // 本周（含今天）里最近的那天；已经过了就顺延到下周
+            d.setDate(d.getDate() + (target - cur + 7) % 7);
+          }
           out.due = fmtDate(d); matched = true;
           return ' ';
         });
@@ -397,8 +403,10 @@
     // 5) 时间（日期已让出空格）
     text = text.replace(/\s(\d{1,2})[:：](\d{2})(?=[\s]|$|[^\x00-\x7F])/g, function (_, h, m) {
       var hh = parseInt(h, 10);
-      if (hh > 23) return arguments[0];
-      out.time = pad(hh) + ':' + m;
+      var mm = parseInt(m, 10);
+      // 分钟也要校验：以前只挡小时，写「9:99」会原样变成一个非法时间
+      if (hh > 23 || mm > 59) return arguments[0];
+      out.time = pad(hh) + ':' + pad(mm);
       return ' ';
     });
     text = text.replace(/\s(\d{1,2})点(半|\d{1,2}分?)?(?=[\s]|$|[^\x00-\x7F])/g, function (_, h, rest) {
@@ -888,6 +896,22 @@
     setTimeout(function () { el.editText.focus(); el.editText.select(); }, 60);
   }
 
+  /* 点遮罩关闭：必须「按下」和「松开」都在遮罩本身上才算。
+     只判断 click 的 target 有个坑：在弹窗里拖选文字、鼠标滑到遮罩上松开时，
+     click 的目标会变成遮罩 —— 弹窗当场关掉，刚编辑的内容全丢。 */
+  function bindMaskTap(mask, onTap) {
+    if (!mask) return;
+    var downOnMask = false;
+    mask.addEventListener('mousedown', function (e) {
+      downOnMask = (e.target === mask);
+    });
+    mask.addEventListener('click', function (e) {
+      var hit = downOnMask && e.target === mask;
+      downOnMask = false;
+      if (hit) onTap();
+    });
+  }
+
   // 遮罩退场：先淡出再把 hidden 立起来，避免「啪」地硬切
   function fadeOutMask(mask, ms) {
     if (!mask || mask.hidden) return null;
@@ -913,6 +937,51 @@
   function findTodo(id) {
     for (var i = 0; i < todos.length; i++) if (todos[i].id === id) return todos[i];
     return null;
+  }
+
+  /* ---------- 数据清洗 ----------
+     磁盘文件和备份都是外部数据：可能少字段、类型不对、甚至混进 null。
+     以前直接拿去排序，sortTodos 里读 null.pinned 当场抛错，
+     整个列表一片空白 —— 用户看到的就是「数据没了」。 */
+  var REPEAT_KEYS = ['none', 'daily', 'weekday', 'weekly', 'monthly', 'yearly'];
+  var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  var TIME_RE = /^\d{2}:\d{2}$/;
+
+  function normalizeTodos(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    var seen = {};
+    var base = Date.now();
+    list.forEach(function (raw, i) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
+      var id = (typeof raw.id === 'string' && raw.id) ? raw.id : '';
+      if (!id || seen[id]) {
+        // 缺 id 或重复 id：补一个。没有 id 的条目点不动、拖不动
+        id = 't' + (base + i).toString(36) + Math.random().toString(36).slice(2, 6);
+      }
+      seen[id] = 1;
+      var title = (typeof raw.title === 'string'
+        ? raw.title
+        : String(raw.title == null ? '' : raw.title)).trim();
+      var item = {
+        id: id,
+        title: title.slice(0, 200) || '未命名',
+        priority: (raw.priority === 'high' || raw.priority === 'low') ? raw.priority : 'medium',
+        due: (typeof raw.due === 'string' && DATE_RE.test(raw.due)) ? raw.due : '',
+        time: (typeof raw.time === 'string' && TIME_RE.test(raw.time)) ? raw.time : '',
+        repeat: REPEAT_KEYS.indexOf(raw.repeat) >= 0 ? raw.repeat : 'none',
+        note: typeof raw.note === 'string' ? raw.note.slice(0, 500) : '',
+        done: !!raw.done,
+        createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : base + i
+      };
+      if (raw.pinned) item.pinned = true;
+      if (typeof raw.order === 'number' && isFinite(raw.order)) item.order = raw.order;
+      if (typeof raw.doneAt === 'number') item.doneAt = raw.doneAt;
+      if (typeof raw.doneCount === 'number') item.doneCount = raw.doneCount;
+      if (typeof raw.lastDoneAt === 'number') item.lastDoneAt = raw.lastDoneAt;
+      out.push(item);
+    });
+    return out;
   }
 
   function saveEdit() {
@@ -1010,11 +1079,7 @@
   if (el.dlgCancel) {
     el.dlgCancel.addEventListener('click', function () { closeDialog(null); });
   }
-  if (el.dlgMask) {
-    el.dlgMask.addEventListener('click', function (e) {
-      if (e.target === el.dlgMask) closeDialog(null);
-    });
-  }
+  bindMaskTap(el.dlgMask, function () { closeDialog(null); });
   if (el.dlgInput) {
     el.dlgInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); el.dlgOk.click(); }
@@ -1350,6 +1415,24 @@
 
     el.updMask.hidden = false;
     document.body.classList.add('upd-open');
+
+    // 上一次已经把安装包下完了（用户点了「稍后」）就别再下一次 12MB：
+    // 直接进「可安装」状态。
+    callApi('get_download_progress').then(function (raw) {
+      var st = parseState(raw);
+      if (!st || st.state !== 'done' || !st.path) return;
+      if (updState.data !== data || el.updMask.hidden) return;
+      updState.done = true;
+      updState.busy = false;
+      el.updBar.hidden = false;
+      el.updFill.style.width = '100%';
+      el.updPct.textContent = '100%';
+      el.updSize.textContent = fmtBytes(st.total || st.received || 0);
+      el.updHint.classList.remove('is-error');
+      el.updHint.textContent = '安装包已经下载好了，点「立即安装」即可（不用重新下载）。';
+      el.updOk.textContent = '立即安装';
+      el.updOk.disabled = false;
+    });
   }
 
   function closeUpdateDialog() {
@@ -1458,14 +1541,10 @@
     });
   }
 
-  if (el.updMask) {
-    el.updMask.addEventListener('click', function (e) {
-      if (e.target === el.updMask) {
-        if (updState.busy) callApi('cancel_download');
-        closeUpdateDialog();
-      }
-    });
-  }
+  bindMaskTap(el.updMask, function () {
+    if (updState.busy) callApi('cancel_download');
+    closeUpdateDialog();
+  });
 
   function initVersion() {
     return callApi('get_version').then(function (v) {
@@ -1538,7 +1617,8 @@
 
       go.then(function (ok) {
         if (!ok) return;
-        todos = incoming;
+        // 备份文件可能来自旧版本或被手工改过，先过一遍清洗再进内存
+        todos = normalizeTodos(incoming);
         save();
         render();
         toast('已导入 ' + todos.length + ' 条待办');
@@ -1614,14 +1694,17 @@
     if (editingId) { remove(editingId); closeModal(); }
   });
 
-  el.modalMask.addEventListener('click', function (e) {
-    if (e.target === el.modalMask) closeModal();
-  });
+  bindMaskTap(el.modalMask, closeModal);
 
   el.editText.addEventListener('keydown', function (e) {
     // Enter 直接保存；想换行用 Shift+Enter
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
-    if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+    if (e.key === 'Escape') {
+      // 不 stop 的话会继续冒泡到 document，那里又关一次（两个退场定时器）
+      e.preventDefault();
+      e.stopPropagation();
+      closeModal();
+    }
   });
 
   document.addEventListener('keydown', function (e) {
@@ -1679,7 +1762,11 @@
   }
 
   function renderSettings() {
-    if (el.setName) el.setName.value = winState.app_name || 'xixiの待办';
+    // 正在输入名字时不要覆盖：点旁边的开关也会触发 renderSettings，
+    // 以前会把用户刚敲的字直接冲掉。
+    if (el.setName && document.activeElement !== el.setName) {
+      el.setName.value = winState.app_name || 'xixiの待办';
+    }
     if (el.setSnap) el.setSnap.classList.toggle('is-on', winState.snap);
     if (el.setTop) el.setTop.classList.toggle('is-on', winState.on_top);
     if (el.setCollapse) el.setCollapse.classList.toggle('is-on', winState.collapse_min);
@@ -1781,6 +1868,10 @@
   if (el.setSnap) {
     el.setSnap.addEventListener('click', function () {
       var next = !winState.snap;
+      // 先翻转本地状态再发请求：响应回来越慢（要写盘再回传状态），
+      // 越容易出现「连点两下只生效一次」—— 第二次点击读到的还是旧值。
+      applySnap(next);
+      renderSettings();
       callApi('set_snap', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applySnap(st.snap); else applySnap(next);
@@ -1797,6 +1888,10 @@
   if (el.setCollapse) {
     el.setCollapse.addEventListener('click', function () {
       var next = !winState.collapse_min;
+      // 两个收边开关互斥：本地也要立刻同步，否则接着点另一个会读到旧值
+      winState.collapse_min = next;
+      if (next) winState.auto_collapse = false;
+      renderSettings();
       callApi('set_collapse_min', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applyWindowState(st); else { winState.collapse_min = next; renderSettings(); }
@@ -1809,6 +1904,9 @@
   if (el.setAutoCollapse) {
     el.setAutoCollapse.addEventListener('click', function () {
       var next = !winState.auto_collapse;
+      winState.auto_collapse = next;
+      if (next) winState.collapse_min = false;
+      renderSettings();
       callApi('set_auto_collapse', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
         if (st) applyWindowState(st); else { winState.auto_collapse = next; renderSettings(); }
@@ -1852,9 +1950,12 @@
 
   if (el.setTop) {
     el.setTop.addEventListener('click', function () {
-      callApi('toggle_on_top').then(function (raw) {
+      var next = !winState.on_top;
+      applyOnTop(next);
+      renderSettings();
+      callApi('set_on_top', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
-        if (st) applyOnTop(st.on_top);
+        if (st) applyOnTop(st.on_top); else applyOnTop(next);
         renderSettings();
         toast(winState.on_top ? '已置顶' : '已取消置顶');
       });
@@ -2182,16 +2283,20 @@
       var next = (winState.mode === 'mini') ? 'full' : 'mini';
       callApi('set_mode', next).then(function (raw) {
         var st = parseState(raw);
-        applyMode(st && st.mode ? st.mode : next);
+        // 整份状态一起应用：以前只切了样式，收起标记等字段会留在旧值
+        if (st) applyWindowState(st);
+        else applyMode(next);
       });
     });
   }
 
   if (el.btnPin) {
     el.btnPin.addEventListener('click', function () {
-      callApi('toggle_on_top').then(function (raw) {
+      var next = !winState.on_top;
+      applyOnTop(next);
+      callApi('set_on_top', next ? '1' : '').then(function (raw) {
         var st = parseState(raw);
-        if (st) applyOnTop(st.on_top);
+        if (st) applyOnTop(st.on_top); else applyOnTop(next);
         toast(winState.on_top ? '已置顶' : '已取消置顶');
       });
     });
@@ -2239,7 +2344,7 @@
 
     return load().then(function (data) {
       if (mySeq !== bootSeq) return;
-      todos = Array.isArray(data.todos) ? data.todos : [];
+      todos = normalizeTodos(data.todos);
       render();
       // 小卡片里输入框在抽屉中，别抢焦点（否则一启动就弹开抽屉）
       if (!document.body.classList.contains('mode-mini')) el.inputText.focus();
@@ -2297,6 +2402,7 @@
     daysUntil: daysUntil,
     nextDueDate: nextDueDate,
     parseQuickInput: parseQuickInput,
+    normalizeTodos: normalizeTodos,
     setComposeRepeat: setComposeRepeat,
     getComposeRepeat: function () { return composeRepeat; },
     moveTodo: moveTodo,
