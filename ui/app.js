@@ -14,7 +14,12 @@
   var composeRepeat = 'none';
   var editPriority = 'medium';
   var toastTimer = null;
+  var toastHideTimer = null;
   var dragId = null;
+  // 只有刚添加的条目才播下落进场。以前靠「DOM 里没有这个 id」判断，
+  // 从空列表（比如「已完成」）切回有内容的筛选时整列表都会重播一遍，像刷新。
+  var enterIds = {};
+  var leavingIds = {};
 
   /* ---------- DOM ---------- */
   var $ = function (id) { return document.getElementById(id); };
@@ -493,7 +498,10 @@
     el.list.innerHTML = '';
     list.forEach(function (t) {
       var li = buildItem(t);
-      if (!before.has(t.id)) li.classList.add('is-enter');
+      if (enterIds[t.id]) {
+        li.classList.add('is-enter');
+        delete enterIds[t.id];
+      }
       el.list.appendChild(li);
     });
 
@@ -516,11 +524,20 @@
       n.style.transition = 'none';
       n.style.transform = 'translateY(' + dy.toFixed(2) + 'px)';
       (function (node) {
+        // 连续两次 render（比如连点勾选）会各自排一组补间。
+        // 用序号认领：先前一次的清理定时器发现序号变了就什么都不做，
+        // 否则它会把后一次正在跑的 transition 清掉，动画当场断在半路。
+        var seq = String((Number(node.dataset.flipSeq) || 0) + 1);
+        node.dataset.flipSeq = seq;
         requestAnimationFrame(function () {
           requestAnimationFrame(function () {
-            node.style.transition = 'transform 0.3s cubic-bezier(0.32, 0.9, 0.24, 1)';
+            if (node.dataset.flipSeq !== seq) return;
+            // 只改 transform，其它过渡（背景、阴影）保留，hover 不因此卡住
+            node.style.transition = 'transform 0.3s var(--ease), '
+              + 'background 0.22s var(--ease), box-shadow 0.22s var(--ease), opacity 0.3s var(--ease)';
             node.style.transform = 'translateY(0)';
             setTimeout(function () {
+              if (node.dataset.flipSeq !== seq) return;
               node.style.transition = '';
               node.style.transform = '';
             }, 340);
@@ -801,6 +818,7 @@
     if (minOrder !== null) task.order = minOrder - 10;
 
     todos.unshift(task);
+    enterIds[task.id] = 1;
 
     el.inputText.value = '';
     el.inputDate.value = '';
@@ -812,6 +830,8 @@
     el.inputText.focus();
     save();
     render();
+    // 新任务排在最前：列表如果滚在下面，用户根本看不到它加上了
+    scrollListTop();
 
     var extras = [];
     if (task.due) extras.push(formatDue(task.due));
@@ -854,15 +874,59 @@
                    : '已取消置顶');
   }
 
-  function remove(id) {
-    var idx = -1;
-    for (var i = 0; i < todos.length; i++) if (todos[i].id === id) { idx = i; break; }
-    if (idx < 0) return;
-    var name = todos[idx].title;
-    todos.splice(idx, 1);
+  function findItemNode(id) {
+    var nodes = el.list.children;
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-id') === id) return nodes[i];
+    }
+    return null;
+  }
+
+  /** 真正从数据里删掉（退场动画结束后、或系统要求减少动画时走这里）。 */
+  function removeNow(id) {
+    delete leavingIds[id];
+    var at = -1;
+    for (var k = 0; k < todos.length; k++) if (todos[k].id === id) { at = k; break; }
+    if (at < 0) return false;
+    var name = todos[at].title;
+    todos.splice(at, 1);
     save();
     render();
     toast('已删除：' + (name.length > 18 ? name.slice(0, 18) + '…' : name));
+    return true;
+  }
+
+  function prefersReducedMotion() {
+    try {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) { return false; }
+  }
+
+  function remove(id) {
+    var idx = -1;
+    for (var i = 0; i < todos.length; i++) if (todos[i].id === id) { idx = i; break; }
+    if (idx < 0 || leavingIds[id]) return;
+
+    var li = findItemNode(id);
+    // 没有节点，或用户系统里关了动画：直接删，别硬等 200ms
+    if (!li || prefersReducedMotion()) { removeNow(id); return; }
+
+    // 先量高度，再过渡到 0：后面的项是「滑」上来的，不是瞬间跳一格。
+    // 高度收完才真正从数据里删掉，所以这期间它还在 DOM 里。
+    leavingIds[id] = 1;
+    li.classList.add('is-leaving');
+    var h = li.getBoundingClientRect().height;
+    li.style.overflow = 'hidden';
+    li.style.height = h + 'px';
+    void li.offsetHeight;                       // 让起点高度先落地
+    li.style.transition = 'height 0.2s var(--ease), padding 0.2s var(--ease), '
+      + 'opacity 0.15s linear, transform 0.2s var(--ease)';
+    li.style.height = '0px';
+    li.style.paddingTop = '0px';
+    li.style.paddingBottom = '0px';
+    li.style.opacity = '0';
+    li.style.transform = 'translateX(10px)';
+    setTimeout(function () { removeNow(id); }, 205);
   }
 
   function clearDone() {
@@ -1016,8 +1080,17 @@
   function toast(msg) {
     el.toast.textContent = msg;
     el.toast.hidden = false;
+    el.toast.classList.remove('is-hiding');
     if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.toast.hidden = true; }, 2400);
+    if (toastHideTimer) clearTimeout(toastHideTimer);
+    toastTimer = setTimeout(function () {
+      // 先放 0.18s 退场再 hidden，别 2.2 秒一到直接没了
+      el.toast.classList.add('is-hiding');
+      toastHideTimer = setTimeout(function () {
+        el.toast.hidden = true;
+        el.toast.classList.remove('is-hiding');
+      }, 180);
+    }, 2200);
   }
 
   /* ---------- 通用输入 / 确认弹窗 ----------
@@ -2081,10 +2154,20 @@
     }
   }
 
+  // 列表滚回顶部：切到条目更少的筛选时，旧滚动位置会留着，
+  // 用户看到的是一片空白，还以为这个筛选里没东西
+  function scrollListTop() {
+    var wrap = el.list.parentElement;
+    if (wrap) wrap.scrollTop = 0;
+  }
+
   document.querySelectorAll('[data-filter]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      filter = btn.getAttribute('data-filter');
+      var next = btn.getAttribute('data-filter');
+      if (next === filter) return;
+      filter = next;
       syncNavActive();
+      scrollListTop();
       render();
     });
   });
@@ -2131,6 +2214,7 @@
   }
 
   function applyPreset(idx) {
+    var changed = winState.mini_preset !== idx;
     winState.mini_preset = idx;
     if (el.sizeSeg) {
       var bs = el.sizeSeg.querySelectorAll('button');
@@ -2139,6 +2223,7 @@
           Number(bs[i].getAttribute('data-preset')) === idx);
       }
     }
+    if (changed) flashSwitch();
   }
 
   function applyWindowState(st) {
@@ -2161,7 +2246,21 @@
     renderSettings();
   }
 
+  var modeSwitchTimer = null;
+
+  /** 窗口几何被系统瞬间改掉时，页面这侧补一个极短淡入，切换不至于太生硬。 */
+  function flashSwitch() {
+    document.body.classList.remove('just-switched');
+    void document.body.offsetWidth;
+    document.body.classList.add('just-switched');
+    if (modeSwitchTimer) clearTimeout(modeSwitchTimer);
+    modeSwitchTimer = setTimeout(function () {
+      document.body.classList.remove('just-switched');
+    }, 260);
+  }
+
   function applyMode(mode) {
+    var changed = winState.mode !== mode;
     winState.mode = mode;
     var isMini = mode === 'mini';
     document.body.classList.toggle('mode-mini', isMini);
@@ -2169,6 +2268,9 @@
     if (!isMini) closeComposer();
     if (el.btnMode) el.btnMode.title = isMini ? '切换到完整视图' : '收成桌面小卡片';
     syncNavActive();
+
+    // 只在真的换模式时播，syncWindowState 重复应用同一模式不该闪
+    if (changed) flashSwitch();
   }
 
   function applyOnTop(onTop) {
@@ -2395,6 +2497,7 @@
     addTodo: addTodo,
     toggle: toggle,
     remove: remove,
+    removeNow: removeNow,
     render: render,
     visibleTodos: visibleTodos,
     isOverdue: isOverdue,
@@ -2407,6 +2510,7 @@
     getComposeRepeat: function () { return composeRepeat; },
     moveTodo: moveTodo,
     togglePin: togglePin,
+    scrollListTop: scrollListTop,
     boot: boot,
     start: start,
     applyMode: applyMode,

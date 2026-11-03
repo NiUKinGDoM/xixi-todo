@@ -661,6 +661,12 @@ body {
   from { opacity: 0; transform: translateY(-8px) scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
+/* 删除退场：高度由 JS 内联过渡到 0，后面的项跟着平滑上移，
+   而不是「啪」地消失、上一格瞬间补位 */
+.todo-item.is-leaving {
+  pointer-events: none;
+  will-change: height, opacity, transform;
+}
 .todo-item:hover {
   background: rgba(255, 255, 255, 0.46);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px -10px rgba(20, 30, 70, 0.4);
@@ -710,6 +716,8 @@ body {
   word-break: break-word;
   user-select: text;
   cursor: text;
+  /* 勾选时颜色要淡过去，不能「啪」地变灰 */
+  transition: color 0.24s var(--ease);
 }
 .todo-meta {
   display: flex;
@@ -717,6 +725,7 @@ body {
   gap: 7px;
   margin-top: 5px;
   flex-wrap: wrap;
+  transition: opacity 0.24s var(--ease);
 }
 
 .tag {
@@ -772,7 +781,7 @@ body {
   height: 100%;
   min-height: 220px;
   color: var(--ink-3);
-  animation: item-in 0.5s var(--ease) both;
+  animation: item-in 0.3s var(--ease) both;
 }
 .empty-art { color: rgba(23, 27, 46, 0.2); }
 .empty-art svg { width: 108px; height: 90px; }
@@ -801,6 +810,15 @@ body {
 .dlg-mask.is-closing {
   animation: fade-out 0.15s cubic-bezier(0.4, 0, 1, 1) both;
   pointer-events: none;
+}
+/* 弹窗本体跟着退：以前只有遮罩淡出，白卡片是「啪」一下没的 */
+.modal-mask.is-closing .modal,
+.dlg-mask.is-closing .dlg {
+  animation: pop-out 0.16s cubic-bezier(0.4, 0, 1, 1) both;
+}
+@keyframes pop-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(8px) scale(0.98); }
 }
 
 .modal {
@@ -915,10 +933,25 @@ body {
   from { opacity: 0; transform: translate(-50%, 14px) scale(0.94); }
   to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
+/* 2.2 秒一到直接 hidden 太生硬，给 0.18s 的退场 */
+.toast.is-hiding { animation: toast-out 0.18s cubic-bezier(0.4, 0, 1, 1) both; }
+@keyframes toast-out {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, 8px) scale(0.96); }
+}
 
 /* ============================================================
    6. 迷你桌面卡片模式
    ============================================================ */
+
+/* 迷你 ↔ 完整：窗口尺寸由系统瞬间改，页面这侧补 0.2s 淡入，
+   让「突然变大一倍」没那么跳。只做透明度，不做位移/缩放，
+   避免整页文字在动画里发糊。 */
+body.just-switched .app { animation: mode-in 0.22s var(--ease) both; }
+@keyframes mode-in {
+  from { opacity: 0.55; }
+  to   { opacity: 1; }
+}
 
 /* 窗口无边框，圆角由 Win32 SetWindowRgn 裁窗口实现（透明在 WebView2 上不可靠）。
    所以卡片必须铺满窗口，不能留边距——否则窗口底色会露出一圈白边。 */
@@ -2182,6 +2215,9 @@ body { background: var(--canvas); }
   border-radius: 9px;
   box-shadow: none;
 }
+/* 小卡片底部有进度条和「+」按钮，toast 压在它们上面既挡字又挡点，
+   抬高到 58px，落在列表底部留白里 */
+body.mode-mini .toast { bottom: 58px; }
 
 /* 小卡片：整窗纯白，靠一条分隔线区分标题栏 */
 body.mode-mini .mini-foot { border-top: 1px solid var(--line); }
@@ -2329,6 +2365,8 @@ body.mode-mini.is-adding .parse-hint { display: none; }
 }
 
 /* 抽屉打开时列表让出底部，最后一条不被挡住 */
+/* 让出底部空间也要过渡，否则抽屉弹出的同时最后一条会被瞬间顶上去 */
+.list-wrap { transition: padding-bottom 0.2s var(--ease); }
 body.mode-mini.is-adding .list-wrap { padding-bottom: 118px; }
 
 /* 抽屉展开时底部进度让位，别和输入区挤在一起 */
@@ -2521,7 +2559,9 @@ body.modal-open .minibar { display: none; }
   width: 0%;
   border-radius: 99px;
   background: var(--accent);
-  transition: width 0.25s var(--ease);
+  /* 前端每 300ms 取一次进度：过渡比采样间隔长，每次都会被下一次打断，
+     看着像进度条在「追着跑」。0.2s 线性刚好接上。 */
+  transition: width 0.2s linear;
 }
 .upd-meta {
   display: flex;
@@ -2689,3 +2729,19 @@ body.mode-mini .bg-orb { animation: none; }
 }
 #menuUpdate.is-checking .set-chev { opacity: 0.25; }
 #menuUpdate.is-checking .set-text b { color: var(--ink-2); }
+
+/* ============================================================
+   系统级「减少动画」：Win 设置里关了动画的用户不该被这些过渡晃到。
+   直接压到 1ms，等于瞬间完成，功能不受影响。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

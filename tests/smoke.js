@@ -153,6 +153,12 @@
       document.querySelector('.nav-item[data-filter="all"]').click();
       return list().length === 7 ? true : 'n=' + list().length;
     });
+    t('从空筛选切回全部不重播进场动画', function () {
+      // 上一步是「已完成」（空列表）→「全部」。以前靠「DOM 里没这个 id」判断新项，
+      // 这一下会让 7 条全部重播下落进场，看着像整页刷新。
+      var n = document.querySelectorAll('.todo-item.is-enter').length;
+      return n === 0 ? true : '带进场的项=' + n;
+    });
 
     /* ---- 排序 ---- */
     t('排序-高优先级在前', function () {
@@ -164,7 +170,13 @@
     t('删除待办', function () {
       var item = byTitle('测试任务A');
       itemEl(item.id).querySelector('.del-btn').click();
-      return A.todos.length === 6 ? true : 'len=' + A.todos.length;
+      // 删除现在先播 0.2s 退场，数据在动画结束才真正移除：
+      // 这里验「按钮→进入退场」，再用 removeNow 立即结算，避免影响后面的计数
+      var leaving = document.querySelectorAll('.todo-item.is-leaving').length;
+      var lenDuringAnim = A.todos.length;
+      A.removeNow(item.id);
+      return (leaving === 1 && lenDuringAnim === 7 && A.todos.length === 6)
+        ? true : 'leaving=' + leaving + ' 动画中=' + lenDuringAnim + ' 结算后=' + A.todos.length;
     });
     t('删除后列表同步', function () {
       return list().length === 6 ? true : 'n=' + list().length;
@@ -198,7 +210,9 @@
       var item = A.todos[0];
       itemEl(item.id).querySelector('.edit-btn').click();
       document.getElementById('editDelete').click();
-      return A.todos.length === 5 ? true : 'len=' + A.todos.length;
+      var leaving = document.querySelectorAll('.todo-item.is-leaving').length;
+      A.removeNow(item.id);
+      return (leaving === 1 && A.todos.length === 5) ? true : 'leaving=' + leaving + ' len=' + A.todos.length;
     });
     t('ESC 关闭弹窗', function () {
       var item = A.todos[0];
