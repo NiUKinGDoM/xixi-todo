@@ -19,7 +19,8 @@ Windows 桌面待办清单，扁平化视觉：纯色底、1px 分隔线、单�
 
 ## 更新日志
 
-格式统一为「新增 / 修复 / 优化」。每个版本的完整说明见
+格式统一为「新增 / 修复 / 优化」，软件内更新弹窗用 `【新增】【修复】【优化】`，
+这里和 GitHub Release 用 Markdown 形式。每个版本的完整说明见
 [GitHub Releases](https://github.com/NiUKinGDoM/xixi-todo/releases)。
 
 ### v1.5.9
@@ -197,7 +198,10 @@ github.moeyy.xyz / gh.llkk.cc / GitHub 官方，六路并行探速后挑最快�
 
 **版本号不升 = 老用户永远收不到更新**，这一步最容易漏。
 
-1. 改 `app.py` 的 `VERSION` 和 `version.json` 的 `version` / `date` / `notes`
+1. 改 `app.py` 的 `VERSION` 和 `version.json` 的 `version` / `date` / `notes`。
+   **`notes` 必须按「【新增】/【修复】/【优化】」分类写**，每条以 `- ` 开头。
+   GitHub Release 正文用 Markdown 标题 `## 新增` / `## 修复` / `## 优化`，
+   本文件的更新日志用 `### 版本` + `- **新增**：`，三处分类保持一致
 2. 打包两步：`venv\Scripts\python build.py` → `build_installer.py`
 3. 跑全部测试：`run_tests.bat`（前端 + 窗口 + 后端 + 集成）
 4. `git add -A` → commit → push
