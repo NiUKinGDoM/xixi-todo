@@ -47,6 +47,21 @@
       var el = document.querySelector('.todo-title');
       return el && el.textContent === '测试任务A' ? true : 'text=' + (el && el.textContent);
     });
+    t('小卡片添加后自动关闭抽屉', function () {
+      // 抽屉展开时底部栏被淡掉，「+」也点不到，加完不收等于没地方关
+      var snapshot = A.todos.slice();
+      var savedMode = document.body.classList.contains('mode-full') ? 'full' : 'mini';
+      A.applyMode('mini');              // headless Chrome 宽 800，默认是完整模式
+      document.getElementById('btnQuickAdd').click();
+      var opened = document.body.classList.contains('is-adding');
+      document.getElementById('inputText').value = '加完就收测试';
+      document.getElementById('addBtn').click();
+      var closed = !document.body.classList.contains('is-adding');
+      A.todos = snapshot;              // 恢复现场，别影响后面的计数断言
+      A.applyMode(savedMode);
+      A.render();
+      return (opened && closed) ? true : '打开=' + opened + ' 关闭=' + closed;
+    });
     t('空白输入被忽略', function () {
       document.getElementById('inputText').value = '   ';
       document.getElementById('addBtn').click();
@@ -767,8 +782,19 @@
         { id: 'd3', title: 'C', priority: 'medium', due: '', done: false, createdAt: 1 }
       ];
       A.render();
-      // 把 C 拖到 A 前面
-      A.moveTodo('d3', 'd1', false);
+      // 用真实的 drag 事件走一遍事件委托链路，不再直接调 moveTodo：
+      // 监听器改成挂在容器上后，必须确认 dragstart/drop 仍然通
+      var items = document.querySelectorAll('.todo-item');
+      var src = items[2], target = items[0];       // 把 C 拖到 A 前面
+      var dt = new DataTransfer();
+      try {
+        src.dispatchEvent(new DragEvent('dragstart', {bubbles:true, dataTransfer:dt}));
+        var r = target.getBoundingClientRect();
+        var opt = {bubbles:true, cancelable:true, dataTransfer:dt, clientY:r.top + 2};
+        target.dispatchEvent(new DragEvent('dragover', opt));
+        target.dispatchEvent(new DragEvent('drop', opt));
+        src.dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:dt}));
+      } catch (e) { return '拖放事件失败: ' + e.message; }
       var order = A.visibleTodos().map(function (x) { return x.title; }).join('');
       return order === 'CAB' ? true : '实际顺序=' + order;
     });

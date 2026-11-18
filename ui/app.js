@@ -129,17 +129,55 @@
     } catch (e) { return Promise.resolve(null); }
   }
 
+  var saveWarnedAt = 0;
+
+  function warnSaveFailure() {
+    // 操作频繁，15 秒内只提醒一次，别把提示条刷屏
+    var now = Date.now();
+    if (now - saveWarnedAt < 15000) return;
+    saveWarnedAt = now;
+    toast('保存失败！请检查磁盘空间或安全软件');
+  }
+
   function save() {
     var payload = JSON.stringify(todos);
     var a = bridge();
     if (a && typeof a.save_todos === 'function') {
       try {
         var r = a.save_todos(payload);
-        if (r && typeof r.catch === 'function') r.catch(function () {});
-      } catch (e) { /* ignore */ }
-    } else {
-      try { localStorage.setItem('todos', payload); } catch (e) { /* ignore */ }
+        if (r && typeof r.then === 'function') {
+          return r.then(function (ok) {
+            // pywebview 把 Python 的 False 原样传回来；以前只看 .catch，
+            // 写盘失败返回 False 时界面一点反应都没有，用户以为存上了
+            if (ok === false) warnSaveFailure();
+            return ok;
+          }).catch(function () {
+            warnSaveFailure();
+            return false;
+          });
+        }
+        if (r === false) warnSaveFailure();
+        return Promise.resolve(r);
+      } catch (e) {
+        warnSaveFailure();
+        return Promise.resolve(false);
+      }
     }
+    try { localStorage.setItem('todos', payload); } catch (e) { warnSaveFailure(); }
+    return Promise.resolve(true);
+  }
+
+  /** 关窗前先让待办写盘：以前 save() 和 close_window 两个请求并发发出，
+      进程一退，最后那次保存可能还没落地。桥接卡住时也不能把关闭按钮弄死。 */
+  function flushAndClose() {
+    var done = false;
+    var finish = function () {
+      if (done) return;
+      done = true;
+      callApi('close_window');
+    };
+    try { save().then(finish, finish); } catch (e) { finish(); }
+    setTimeout(finish, 1500);
   }
 
   function parseJson(raw) {
@@ -481,8 +519,11 @@
     return FILTER_TITLE[filter];
   }
 
-  function render() {
+  function render(opts) {
     var list = visibleTodos();
+    // 切筛选时列表整个换一批，没有「同一条从哪滑到哪」可言，
+    // 省掉前后两轮 getBoundingClientRect（100 条就是 200 次读布局）
+    var doFlip = !(opts && opts.skipFlip);
 
     // 渲染前记下每一项在屏幕上的位置：
     //  · 只有真正新加的条目才播「下落进场」，否则每次勾选、置顶都让整列表重播动画，
@@ -490,37 +531,55 @@
     //  · 老条目位置变了就做一次 FLIP 位移动画（先瞬移到旧位置，再滑回新位置），
     //    置顶、拖动排序、勾选后换位都是滑过去而不是瞬间跳。
     var before = new Map();
-    for (var i = 0; i < el.list.children.length; i++) {
-      var old = el.list.children[i];
-      before.set(old.getAttribute('data-id'), old.getBoundingClientRect().top);
+    if (doFlip) {
+      for (var i = 0; i < el.list.children.length; i++) {
+        var old = el.list.children[i];
+        before.set(old.getAttribute('data-id'), old.getBoundingClientRect().top);
+      }
     }
 
-    el.list.innerHTML = '';
+    // 先在文档片段里把所有节点建好，再一次性挂到 DOM。
+    // 以前每 appendChild 一条就触发一次布局，100 条要重排 100 次。
+    var frag = document.createDocumentFragment();
     list.forEach(function (t) {
       var li = buildItem(t);
       if (enterIds[t.id]) {
         li.classList.add('is-enter');
         delete enterIds[t.id];
       }
-      el.list.appendChild(li);
+      frag.appendChild(li);
     });
+    el.list.innerHTML = '';
+    el.list.appendChild(frag);
 
     el.empty.hidden = list.length > 0;
     el.list.style.display = list.length ? '' : 'none';
 
-    flipIn(before);
-    updateStats();
+    if (doFlip) flipIn(before);
+    updateStats(list);
   }
 
   function flipIn(before) {
     if (!before.size) return;
     var nodes = el.list.children;
+
+    // 阶段一：只读布局。读一行就写一行样式的话，下一次读 getBoundingClientRect
+    // 会逼浏览器把刚才那次写立刻重排一遍 —— 100 条就是 100 次强制同步布局，
+    // 勾选一条任务掉帧的主要来源。这里先把位移量全算出来。
+    var moves = [];
     for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      var prevTop = before.get(n.getAttribute('data-id'));
+      var node0 = nodes[i];
+      var prevTop = before.get(node0.getAttribute('data-id'));
       if (prevTop === undefined) continue;
-      var dy = prevTop - n.getBoundingClientRect().top;
-      if (Math.abs(dy) < 1) continue;
+      var dy0 = prevTop - node0.getBoundingClientRect().top;
+      if (Math.abs(dy0) >= 1) moves.push([node0, dy0]);
+    }
+    if (!moves.length) return;
+
+    // 阶段二：只写样式，浏览器一次布局就能吃完
+    for (var m = 0; m < moves.length; m++) {
+      var n = moves[m][0];
+      var dy = moves[m][1];
       n.style.transition = 'none';
       n.style.transform = 'translateY(' + dy.toFixed(2) + 'px)';
       (function (node) {
@@ -572,7 +631,6 @@
     btn.className = 'check' + (t.done ? ' is-checked' : '');
     btn.title = t.done ? '标记为未完成' : (t.repeat && t.repeat !== 'none' ? '完成并滚到下一次' : '标记为完成');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.6 4.6L19 7.2"/></svg>';
-    btn.addEventListener('click', function () { toggle(t.id); });
 
     // 主体
     var main = document.createElement('div');
@@ -624,22 +682,16 @@
     pinBtn.className = 'icon-btn pin-btn' + (t.pinned ? ' is-pinned' : '');
     pinBtn.title = t.pinned ? '取消置顶' : '置顶这条';
     pinBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3.5h5"/><path d="M10.6 3.5v5.3L7.9 11.2v1.6h8.2v-1.6l-2.7-2.4V3.5"/><path d="M12 12.8v7.7"/></svg>';
-    pinBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      togglePin(t.id);
-    });
 
     var editBtn = document.createElement('button');
     editBtn.className = 'icon-btn edit-btn';
     editBtn.title = '编辑';
     editBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.6l3.9 3.9M4.5 19.5l.9-3.9L16 5a1.8 1.8 0 012.5 0l.5.5a1.8 1.8 0 010 2.5L8.4 18.6l-3.9.9z"/></svg>';
-    editBtn.addEventListener('click', function () { openModal(t.id); });
 
     var delBtn = document.createElement('button');
     delBtn.className = 'icon-btn del-btn danger';
     delBtn.title = '删除';
     delBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V5.4A1.4 1.4 0 0110.9 4h2.2a1.4 1.4 0 011.4 1.4V7M6.5 7l.8 12a1.6 1.6 0 001.6 1.5h6.2a1.6 1.6 0 001.6-1.5L17.5 7"/></svg>';
-    delBtn.addEventListener('click', function () { remove(t.id); });
 
     acts.appendChild(pinBtn);
     acts.appendChild(editBtn);
@@ -650,30 +702,55 @@
     li.appendChild(main);
     li.appendChild(acts);
 
-    bindDrag(li, t.id);
     return li;
   }
 
-  /* ---------- 拖拽排序 ---------- */
-  function bindDrag(li, id) {
-    li.addEventListener('dragstart', function (e) {
-      dragId = id;
+  /* ---------- 列表事件委托 ----------
+     以前每条待办要绑 4 个 click + 5 个 drag 监听器，100 条就是 900 个，
+     而且 render 每次重建列表都要重新绑一遍。现在只在容器上绑一次，
+     节点随便重建，监听器数量恒定。 */
+  function bindListDelegates() {
+    function itemOf(target) {
+      return target && target.closest ? target.closest('.todo-item') : null;
+    }
+    function dropTarget(e) {
+      var li = itemOf(e.target);
+      if (!li || !dragId || dragId === li.getAttribute('data-id')) return null;
+      return li;
+    }
+
+    el.list.addEventListener('click', function (e) {
+      var li = itemOf(e.target);
+      if (!li) return;
+      var id = li.getAttribute('data-id');
+      if (e.target.closest('.check')) { toggle(id); return; }
+      if (e.target.closest('.pin-btn')) { e.stopPropagation(); togglePin(id); return; }
+      if (e.target.closest('.edit-btn')) { openModal(id); return; }
+      if (e.target.closest('.del-btn')) { remove(id); return; }
+    });
+
+    el.list.addEventListener('dragstart', function (e) {
+      var li = itemOf(e.target);
+      if (!li) return;
+      dragId = li.getAttribute('data-id');
       li.classList.add('is-dragging');
-      try { e.dataTransfer.setData('text/plain', id); } catch (err) { /* ignore */ }
+      try { e.dataTransfer.setData('text/plain', dragId); } catch (err) { /* ignore */ }
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
     });
 
-    li.addEventListener('dragend', function () {
+    el.list.addEventListener('dragend', function (e) {
+      var li = itemOf(e.target);
       dragId = null;
-      li.classList.remove('is-dragging');
+      if (li) li.classList.remove('is-dragging');
       var marks = el.list.querySelectorAll('.drop-before, .drop-after');
       for (var i = 0; i < marks.length; i++) {
         marks[i].classList.remove('drop-before', 'drop-after');
       }
     });
 
-    li.addEventListener('dragover', function (e) {
-      if (!dragId || dragId === id) return;
+    el.list.addEventListener('dragover', function (e) {
+      var li = dropTarget(e);
+      if (!li) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
       var r = li.getBoundingClientRect();
@@ -682,17 +759,19 @@
       li.classList.toggle('drop-before', !after);
     });
 
-    li.addEventListener('dragleave', function () {
-      li.classList.remove('drop-before', 'drop-after');
+    el.list.addEventListener('dragleave', function (e) {
+      var li = itemOf(e.target);
+      if (li) li.classList.remove('drop-before', 'drop-after');
     });
 
-    li.addEventListener('drop', function (e) {
-      if (!dragId || dragId === id) return;
+    el.list.addEventListener('drop', function (e) {
+      var li = dropTarget(e);
+      if (!li) return;
       e.preventDefault();
       var r = li.getBoundingClientRect();
       var after = (e.clientY - r.top) > r.height / 2;
       li.classList.remove('drop-before', 'drop-after');
-      moveTodo(dragId, id, after);
+      moveTodo(dragId, li.getAttribute('data-id'), after);
     });
   }
 
@@ -717,7 +796,7 @@
   }
 
   /* ---------- 统计 ---------- */
-  function updateStats() {
+  function updateStats(shownList) {
     var t = todayStr();
     var all = todos.length;
     var done = 0, pending = 0, overdue = 0, todayN = 0;
@@ -764,7 +843,8 @@
     if (el.miniStat) el.miniStat.textContent = sDone + ' / ' + sTotal + ' 完成';
 
     el.heroTitle.textContent = heroTitleText();
-    var shown = visibleTodos().length;
+    // render 已经 filter + sort 过了，别再算一遍
+    var shown = shownList ? shownList.length : visibleTodos().length;
     if (filter === 'done') {
       el.heroSub.textContent = shown + ' 项已完成';
     } else if (filter === 'all') {
@@ -825,13 +905,14 @@
     setComposeRepeat('none');
     syncDateField();
     updateParseHint();
-    // 抽屉保持打开：连着记几条是常态，加完一条就收反而碍事。
-    // 点抽屉外面或按 Esc 才收起。
-    el.inputText.focus();
     save();
     render();
     // 新任务排在最前：列表如果滚在下面，用户根本看不到它加上了
     scrollListTop();
+    // 小卡片里加完就收。抽屉展开时底部栏被淡掉，「+」也点不到，
+    // 等于没有明确的关闭入口 —— 以前只能点别处或按 Esc。
+    if (isMiniMode()) closeComposer();
+    else el.inputText.focus();
 
     var extras = [];
     if (task.due) extras.push(formatDue(task.due));
@@ -1700,6 +1781,7 @@
   }
 
   /* ---------- 事件绑定 ---------- */
+  bindListDelegates();
   el.addBtn.addEventListener('click', addTodo);
 
   el.inputText.addEventListener('keydown', function (e) {
@@ -2052,7 +2134,7 @@
   if (el.menuQuit) {
     el.menuQuit.addEventListener('click', function () {
       askConfirm('退出应用？', '退出后待办都还在，下次打开继续。', '退出')
-        .then(function (ok) { if (ok) callApi('close_window'); });
+        .then(function (ok) { if (ok) flushAndClose(); });
     });
   }
 
@@ -2168,7 +2250,7 @@
       filter = next;
       syncNavActive();
       scrollListTop();
-      render();
+      render({ skipFlip: true });
     });
   });
 
@@ -2292,7 +2374,9 @@
     document.body.classList.toggle('collapsed-v', vertical);
     document.body.classList.toggle('collapsed-h', horizontal);
     if (el.collapsedMark) el.collapsedMark.hidden = !on;
-    if (on) closeSettings();
+    // 收边时把设置页和添加抽屉一起收掉：否则展开回来还停在半开的抽屉，
+    // 用户以为界面卡住了
+    if (on) { closeSettings(); closeComposer(); }
     // 展开回来重新开始空闲计时；收起时自然停表
     if (!on) resetIdleTimer();
   }
@@ -2359,8 +2443,17 @@
     }, IDLE_COLLAPSE_MS);
   }
 
+  // mousemove 在 WebView2 里能到 60~120Hz，每次都 clear/set 一个 10 秒定时器
+  // 纯属白费。400ms 内只认第一次，空闲判定最多差 0.4 秒，没人感觉得到。
+  var lastActivity = 0;
+  function onActivity() {
+    var now = Date.now();
+    if (now - lastActivity < 400) return;
+    lastActivity = now;
+    resetIdleTimer();
+  }
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) {
-    document.addEventListener(ev, resetIdleTimer, { passive: true });
+    document.addEventListener(ev, onActivity, { passive: true });
   });
 
   /* ---------- 兜底轮询：后端自己收起时前端也得知道 ----------
@@ -2429,10 +2522,7 @@
   });
 
   if (el.btnClose) {
-    el.btnClose.addEventListener('click', function () {
-      save();
-      callApi('close_window');
-    });
+    el.btnClose.addEventListener('click', flushAndClose);
   }
 
   /* ---------- 启动 ---------- */
@@ -2511,6 +2601,8 @@
     moveTodo: moveTodo,
     togglePin: togglePin,
     scrollListTop: scrollListTop,
+    save: save,
+    flushAndClose: flushAndClose,
     boot: boot,
     start: start,
     applyMode: applyMode,

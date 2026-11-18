@@ -141,6 +141,38 @@ EXIT_ANIM = """
 })()
 """
 
+# 保存失败曾经被静默吞掉：mock 后端返回 false，看前端有没有提示
+SAVE_FAIL_START = """
+(function(){
+  var api = window.pywebview.api;
+  var orig = api.save_todos;
+  var t = document.getElementById('toast');
+  t.textContent = '';
+  t.hidden = true;
+  window.__saveProbe = {done:false};
+  api.save_todos = function(){ return Promise.resolve(false); };
+  window.__todoApp.save().then(function(){
+    api.save_todos = orig;
+    window.__saveProbe = {done:true, text:t.textContent, hidden:t.hidden};
+  });
+  return 'started';
+})()
+"""
+
+# 核心验收：真实窗口里，小卡片加完一条后抽屉必须自己收起来
+ADD_CLOSE = """
+(function(){
+  var A = window.__todoApp;
+  document.getElementById('btnQuickAdd').click();
+  var opened = document.body.classList.contains('is-adding');
+  document.getElementById('inputText').value = '真机添加测试';
+  document.getElementById('addBtn').click();
+  var closed = !document.body.classList.contains('is-adding');
+  var has = A.todos.some(function(x){ return x.title === '真机添加测试'; });
+  return JSON.stringify({opened:opened, closed:closed, added:has});
+})()
+"""
+
 
 def main() -> None:
     state = appmod.load_state()
@@ -192,6 +224,18 @@ def main() -> None:
             out["doneColor"] = json.loads(js(DONE_COLOR))
             step = "exit-anim"
             out["exitAnim"] = json.loads(js(EXIT_ANIM))
+            step = "save-fail"
+            js(SAVE_FAIL_START)
+            for _ in range(12):
+                time.sleep(0.1)
+                probe = json.loads(js("JSON.stringify(window.__saveProbe)"))
+                if probe.get("done"):
+                    out["saveFail"] = probe
+                    break
+            else:
+                out["saveFail"] = {"done": False}
+            step = "add-close"
+            out["addClose"] = json.loads(js(ADD_CLOSE))
             step = "reduced"
             out["reducedMotionRules"] = js(
                 "Array.from(document.styleSheets).some(function(s){"
