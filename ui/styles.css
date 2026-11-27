@@ -2759,3 +2759,9 @@ body.mode-mini .bg-orb { animation: none; }
   line-height: 1.5;
   color: var(--ink-muted, rgba(23, 27, 46, 0.5));
 }
+
+/* 同步状态失败要显眼，不能混在普通说明文字里 */
+#syncStatus.is-error {
+  color: #b91c1c;
+  font-weight: 600;
+}

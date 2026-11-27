@@ -1784,6 +1784,18 @@
         save();
         render();
         toast('已导入 ' + todos.length + ' 条待办');
+        // 导入是「整份替换」，如果开了云同步又不推上去，下次拉取就会被云端旧数据覆盖回来。
+        // 明确问一次，不要悄悄决定。
+        callApi('get_sync_state').then(function (raw) {
+          var st = {};
+          try { st = JSON.parse(raw || '{}'); } catch (e) { st = {}; }
+          if (!st.ready) return;
+          askConfirm('同步到云端？', '导入替换了全部待办。建议立即推到云端，否则下次拉取可能把云端旧数据覆盖回来。', '立即上传')
+            .then(function (ok) { if (ok) callApi('sync_push').then(function (r2) {
+              var rr = {}; try { rr = JSON.parse(r2 || '{}'); } catch (e) { rr = {}; }
+              toast(rr.msg || '已上传');
+            }); });
+        }).catch(function () {});
       });
     });
   }
@@ -2150,6 +2162,31 @@
   if (el.menuRestore) el.menuRestore.addEventListener('click', restore);
 
   // ---------- 云同步：与手机端共用 todos.json ----------
+  var syncBusy = false;
+
+  function syncStatusText(st) {
+    if (!st) return '未配置';
+    if (st.state === 'pushing') return '正在上传…';
+    if (st.state === 'pulling') return '正在拉取…';
+    if (st.state === 'error') return '同步失败：' + String(st.msg || '').slice(0, 18);
+    if (st.state === 'ok' && st.at) {
+      var d = new Date(st.at);
+      var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+      return '上次同步 ' + hh + (st.msg ? ' · ' + String(st.msg).slice(0, 12) : '');
+    }
+    return st.ready ? '已配置（改动自动上传）' : '未配置';
+  }
+
+  function refreshSyncState() {
+    if (!el.syncStatus) return;
+    callApi('get_sync_state').then(function (raw) {
+      var st = {};
+      try { st = JSON.parse(raw || '{}'); } catch (e) { st = {}; }
+      el.syncStatus.textContent = syncStatusText(st);
+      el.syncStatus.classList.toggle('is-error', st.state === 'error');
+    }).catch(function () {});
+  }
+
   function loadSyncConfig() {
     if (!el.syncUrl) return;
     callApi('get_sync_config').then(function (raw) {
@@ -2157,8 +2194,10 @@
       try { cfg = JSON.parse(raw || '{}'); } catch (e) { cfg = {}; }
       el.syncUrl.value = cfg.url || '';
       el.syncUser.value = cfg.user || '';
+      // 密码回显：留空表示「沿用已保存的」，避免明文反复出现在界面上
       el.syncPass.value = cfg.password || '';
-      el.syncStatus.textContent = cfg.ready ? '已配置（改动自动上传）' : '未配置';
+      el.syncPass.placeholder = cfg.password ? '已保存，留空表示不修改' : '应用密码（不是登录密码）';
+      refreshSyncState();
     }).catch(function () { el.syncStatus.textContent = '读取配置失败'; });
   }
 
@@ -2170,46 +2209,60 @@
       var r = {};
       try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
       toast(r.msg || '已保存');
-      if (r.ok) el.syncStatus.textContent = '已配置（改动自动上传）';
+      refreshSyncState();
     }).catch(function () { toast('保存配置失败'); });
   });
 
   if (el.syncTest) el.syncTest.addEventListener('click', function () {
+    if (syncBusy) return;
+    syncBusy = true;
     el.syncStatus.textContent = '正在测试…';
     callApi('sync_test').then(function (raw) {
       var r = {};
       try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
       toast(r.msg || (r.ok ? '连接正常' : '连接失败'));
-      el.syncStatus.textContent = r.ok ? '连接正常' : '连接失败';
-    }).catch(function () { el.syncStatus.textContent = '测试失败'; });
+      syncBusy = false;
+      refreshSyncState();
+    }).catch(function () { syncBusy = false; el.syncStatus.textContent = '测试失败'; });
   });
 
   if (el.syncDown) el.syncDown.addEventListener('click', function () {
+    if (syncBusy) return;
+    syncBusy = true;
     el.syncStatus.textContent = '正在拉取…';
     callApi('sync_pull').then(function (raw) {
       var r = {};
       try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      syncBusy = false;
       toast(r.msg || '拉取完成');
-      el.syncStatus.textContent = r.ok ? '已同步' : '拉取失败';
+      // ★关键：以前只调 load() 不接结果，界面还是旧数据，看着像没同步。
       if (r.changed) {
-        // 云端内容覆盖了本地，重新读一次列表（后端已经写盘）
-        load();
+        load().then(function (data) {
+          todos = normalizeTodos(data.todos);
+          render();
+        });
+      } else {
+        refreshSyncState();
       }
-    }).catch(function () { el.syncStatus.textContent = '拉取失败'; });
+    }).catch(function () { syncBusy = false; el.syncStatus.textContent = '拉取失败'; });
   });
 
   if (el.syncUp) el.syncUp.addEventListener('click', function () {
+    if (syncBusy) return;
+    syncBusy = true;
     el.syncStatus.textContent = '正在上传…';
     callApi('sync_push').then(function (raw) {
       var r = {};
       try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      syncBusy = false;
       toast(r.msg || '上传完成');
-      el.syncStatus.textContent = r.ok ? '已上传' : '上传失败';
-    }).catch(function () { el.syncStatus.textContent = '上传失败'; });
+      refreshSyncState();
+    }).catch(function () { syncBusy = false; el.syncStatus.textContent = '上传失败'; });
   });
 
   // 打开设置页时读一次配置（不每次重建 DOM，幂等）
   loadSyncConfig();
+
   if (el.menuClearDone) {
     el.menuClearDone.addEventListener('click', function () {
       var finished = todos.filter(function (t) { return t.done; }).length;
