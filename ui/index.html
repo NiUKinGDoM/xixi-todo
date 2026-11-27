@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>xixiの待办清单</title>
-<link rel="stylesheet" href="styles.css?v=167">
+<link rel="stylesheet" href="styles.css?v=168">
 </head>
 <body class="mode-mini">
 
@@ -184,6 +184,28 @@
           <span class="set-text"><b id="updateLabel">检查更新</b><small>有新版本会提示下载</small></span>
           <svg class="set-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
         </button>
+      </div>
+    </section>
+
+    <section class="set-group">
+      <p class="set-group-label">云同步（手机联动）</p>
+      <div class="set-list">
+        <div class="set-row column">
+          <div class="set-row-head">
+            <span class="set-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 17.5a4 4 0 01-.4-8A6 6 0 0118 10.2a3.7 3.7 0 01-.5 7.3z"/><path d="M12 11v6M9.5 13.5L12 11l2.5 2.5"/></svg></span>
+            <span class="set-text"><b id="syncStatus">未配置</b><small>坚果云 WebDAV，与手机端共用 todos.json</small></span>
+          </div>
+          <input class="set-input" id="syncUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://dav.jianguoyun.com/dav">
+          <input class="set-input" id="syncUser" type="text" autocomplete="off" spellcheck="false" placeholder="账号（邮箱）">
+          <input class="set-input" id="syncPass" type="password" autocomplete="off" placeholder="应用密码（不是登录密码）">
+          <div class="set-actions">
+            <button class="set-chip" id="syncSave">保存配置</button>
+            <button class="set-chip" id="syncTest">测试连接</button>
+            <button class="set-chip" id="syncDown">从云端拉取</button>
+            <button class="set-chip" id="syncUp">推到云端</button>
+          </div>
+          <p class="set-hint">密码用 Windows DPAPI 加密保存。改动后 2 秒自动推到云端。</p>
+        </div>
       </div>
     </section>
 
@@ -492,6 +514,6 @@
 <!-- ===== 轻提示 ===== -->
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=167"></script>
+<script src="app.js?v=168"></script>
 </body>
 </html>

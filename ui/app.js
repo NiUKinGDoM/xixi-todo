@@ -70,6 +70,14 @@
     menuQuit: $('menuQuit'),
     menuBackup: $('menuBackup'),
     menuRestore: $('menuRestore'),
+    syncUrl: $('syncUrl'),
+    syncUser: $('syncUser'),
+    syncPass: $('syncPass'),
+    syncSave: $('syncSave'),
+    syncTest: $('syncTest'),
+    syncDown: $('syncDown'),
+    syncUp: $('syncUp'),
+    syncStatus: $('syncStatus'),
     menuClearDone: $('menuClearDone'),
     menuUpdate: $('menuUpdate'),
     updateLabel: $('updateLabel'),
@@ -2140,6 +2148,68 @@
 
   if (el.menuBackup) el.menuBackup.addEventListener('click', backup);
   if (el.menuRestore) el.menuRestore.addEventListener('click', restore);
+
+  // ---------- 云同步：与手机端共用 todos.json ----------
+  function loadSyncConfig() {
+    if (!el.syncUrl) return;
+    callApi('get_sync_config').then(function (raw) {
+      var cfg = {};
+      try { cfg = JSON.parse(raw || '{}'); } catch (e) { cfg = {}; }
+      el.syncUrl.value = cfg.url || '';
+      el.syncUser.value = cfg.user || '';
+      el.syncPass.value = cfg.password || '';
+      el.syncStatus.textContent = cfg.ready ? '已配置（改动自动上传）' : '未配置';
+    }).catch(function () { el.syncStatus.textContent = '读取配置失败'; });
+  }
+
+  if (el.syncSave) el.syncSave.addEventListener('click', function () {
+    var payload = JSON.stringify({
+      url: el.syncUrl.value, user: el.syncUser.value, password: el.syncPass.value
+    });
+    callApi('set_sync_config', payload).then(function (raw) {
+      var r = {};
+      try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      toast(r.msg || '已保存');
+      if (r.ok) el.syncStatus.textContent = '已配置（改动自动上传）';
+    }).catch(function () { toast('保存配置失败'); });
+  });
+
+  if (el.syncTest) el.syncTest.addEventListener('click', function () {
+    el.syncStatus.textContent = '正在测试…';
+    callApi('sync_test').then(function (raw) {
+      var r = {};
+      try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      toast(r.msg || (r.ok ? '连接正常' : '连接失败'));
+      el.syncStatus.textContent = r.ok ? '连接正常' : '连接失败';
+    }).catch(function () { el.syncStatus.textContent = '测试失败'; });
+  });
+
+  if (el.syncDown) el.syncDown.addEventListener('click', function () {
+    el.syncStatus.textContent = '正在拉取…';
+    callApi('sync_pull').then(function (raw) {
+      var r = {};
+      try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      toast(r.msg || '拉取完成');
+      el.syncStatus.textContent = r.ok ? '已同步' : '拉取失败';
+      if (r.changed) {
+        // 云端内容覆盖了本地，重新读一次列表（后端已经写盘）
+        load();
+      }
+    }).catch(function () { el.syncStatus.textContent = '拉取失败'; });
+  });
+
+  if (el.syncUp) el.syncUp.addEventListener('click', function () {
+    el.syncStatus.textContent = '正在上传…';
+    callApi('sync_push').then(function (raw) {
+      var r = {};
+      try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
+      toast(r.msg || '上传完成');
+      el.syncStatus.textContent = r.ok ? '已上传' : '上传失败';
+    }).catch(function () { el.syncStatus.textContent = '上传失败'; });
+  });
+
+  // 打开设置页时读一次配置（不每次重建 DOM，幂等）
+  loadSyncConfig();
   if (el.menuClearDone) {
     el.menuClearDone.addEventListener('click', function () {
       var finished = todos.filter(function (t) { return t.done; }).length;

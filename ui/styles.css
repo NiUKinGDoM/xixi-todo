@@ -2745,3 +2745,17 @@ body.mode-mini .bg-orb { animation: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* 云同步配置：四个操作按钮横排 + 一行说明 */
+.set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.set-hint {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-muted, rgba(23, 27, 46, 0.5));
+}

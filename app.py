@@ -22,12 +22,13 @@ from pathlib import Path
 
 import webview
 
+import webdav_sync
 from tray import SW_HIDE, SW_SHOW, TrayIcon
 
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.5.9"
+VERSION = "1.6.0"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -812,6 +813,10 @@ class Api:
         # 应用内更新的下载状态（前端轮询这个）
         self._dl = {"state": "idle", "received": 0, "total": 0,
                     "error": "", "path": "", "source": ""}
+        # WebDAV 同步：改数据后防抖推云端；启动时拉一次
+        self._sync_cfg = webdav_sync.load_config(self.store.path.parent)
+        self._push_timer: threading.Timer | None = None
+        self._sync_lock = threading.Lock()
 
     # ---------- 数据 ----------
 
@@ -828,7 +833,106 @@ class Api:
             return False
         if not isinstance(items, list):
             return False
-        return self.store.save(items)
+        ok = self.store.save(items)
+        if ok:
+            # 记下改动时间，供手机端判断谁更新；并防抖推云端
+            webdav_sync.write_meta(self.store.path.parent, int(time.time() * 1000))
+            self._schedule_push()
+        return ok
+
+    # ---------- WebDAV 同步（与手机端 todo-android 互通） ----------
+
+    def _schedule_push(self) -> None:
+        """数据变了就防抖 2 秒推一次，连续操作只推最后一次。"""
+        if not self._sync_cfg.ready:
+            return
+        with self._sync_lock:
+            if self._push_timer is not None:
+                self._push_timer.cancel()
+            self._push_timer = threading.Timer(2.0, self._do_push)
+            self._push_timer.daemon = True
+            self._push_timer.start()
+
+    def _do_push(self) -> None:
+        try:
+            cfg = self._sync_cfg
+            if not cfg.ready:
+                return
+            items = self.store.load()
+            content = json.dumps(items, ensure_ascii=False, indent=2)
+            ok, msg = webdav_sync.push(cfg, content, int(time.time() * 1000))
+            _log(f"webdav push: {ok} {msg}")
+        except Exception as exc:
+            _log(f"webdav push failed: {exc}")
+
+    def get_sync_config(self) -> str:
+        """返回同步配置（密码原样返回，前端设置页回显用）。"""
+        cfg = self._sync_cfg
+        return json.dumps({
+            "url": cfg.url, "user": cfg.user, "password": cfg.password,
+            "ready": cfg.ready,
+        }, ensure_ascii=False)
+
+    def set_sync_config(self, payload: str) -> str:
+        """保存同步配置并立即测一次连接。返回带 ok/msg 的 JSON。"""
+        try:
+            d = json.loads(payload)
+        except Exception as exc:
+            return json.dumps({"ok": False, "msg": f"配置格式错误: {exc}"}, ensure_ascii=False)
+        cfg = webdav_sync.SyncConfig(
+            url=str(d.get("url", "")), user=str(d.get("user", "")),
+            password=str(d.get("password", "")),
+        )
+        ok, msg = webdav_sync.test(cfg) if cfg.ready else (False, "请填全地址、账号、应用密码")
+        if ok or not cfg.password:
+            # 测通了才落盘；密码清空时也允许保存（等于关闭同步）
+            self._sync_cfg = cfg
+            webdav_sync.save_config(self.store.path.parent, cfg)
+        return json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False)
+
+    def sync_test(self) -> str:
+        ok, msg = webdav_sync.test(self._sync_cfg)
+        return json.dumps({"ok": ok, "msg": msg}, ensure_ascii=False)
+
+    def sync_pull(self) -> str:
+        """从云端拉：谁新用谁。返回 {ok,msg,changed,count}。"""
+        cfg = self._sync_cfg
+        content, remote_ts, msg = webdav_sync.pull(cfg)
+        if content is None:
+            return json.dumps({"ok": False, "msg": msg, "changed": False, "count": 0}, ensure_ascii=False)
+        try:
+            items = json.loads(content)
+        except Exception as exc:
+            return json.dumps({"ok": False, "msg": f"云端格式错误: {exc}", "changed": False, "count": 0}, ensure_ascii=False)
+        if not isinstance(items, list):
+            return json.dumps({"ok": False, "msg": "云端格式错误", "changed": False, "count": 0}, ensure_ascii=False)
+
+        local_ts = webdav_sync.read_meta(self.store.path.parent)
+        if remote_ts and remote_ts <= local_ts and self.store.path.exists():
+            # 本地更新，反推上去，不覆盖本地
+            self._do_push()
+            return json.dumps({
+                "ok": True, "msg": "本地更新，已推到云端", "changed": False,
+                "count": len(items),
+            }, ensure_ascii=False)
+
+        ok = self.store.save(items)
+        if ok:
+            webdav_sync.write_meta(self.store.path.parent, remote_ts or int(time.time() * 1000))
+        _log(f"webdav pull: saved={ok} remote_ts={remote_ts} local_ts={local_ts}")
+        return json.dumps({
+            "ok": ok, "msg": f"已从云端同步 {len(items)} 条" if ok else "写入本地失败",
+            "changed": bool(ok), "count": len(items),
+        }, ensure_ascii=False)
+
+    def sync_push(self) -> str:
+        cfg = self._sync_cfg
+        if not cfg.ready:
+            return json.dumps({"ok": False, "msg": "同步配置不完整"}, ensure_ascii=False)
+        items = self.store.load()
+        content = json.dumps(items, ensure_ascii=False, indent=2)
+        ok, msg = webdav_sync.push(cfg, content, int(time.time() * 1000))
+        return json.dumps({"ok": ok, "msg": msg, "count": len(items)}, ensure_ascii=False)
 
     def notify(self, title: str, message: str) -> bool:
         """触发一条系统通知（用于到期提醒）。"""
