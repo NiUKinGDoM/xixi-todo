@@ -28,7 +28,7 @@ from tray import SW_HIDE, SW_SHOW, TrayIcon
 APP_NAME = "xixiの待办清单"
 APP_ID = "xixi-todo"
 OLD_APP_ID = "TodoGlass"          # 改名前的数据目录，用于自动迁移
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 REPO = "NiUKinGDoM/xixi-todo"
 
 # 界面上显示的短名，用户可在菜单里改（小卡片标题 / 侧边栏 / 窗口标题共用）
@@ -986,9 +986,15 @@ class Api:
             _log(f"backup before sync failed: {exc}")
             return ""
 
-    def sync_pull(self) -> str:
-        """从云端拉：谁新用谁。覆盖本地前先备份。返回 {ok,msg,changed,count,backup}。"""
+    def sync_pull(self, force: str = "0") -> str:
+        """从云端拉。
+        · force=1（用户点「从云端下载」）：强制用云端覆盖本地，不再反推 ——
+          手动点下载就是明确「我要云端数据」，时间戳反推会让按钮像没反应/反向同步。
+        · force=0（自动同步口径）：谁新用谁，覆盖前备份。
+        返回 {ok,msg,changed,count,backup}。
+        """
         cfg = self._sync_cfg
+        force_download = str(force).lower() in ("1", "true", "yes")
         if not cfg.ready:
             return json.dumps({"ok": False, "msg": "同步配置不完整", "changed": False,
                                "count": 0, "backup": ""}, ensure_ascii=False)
@@ -1012,7 +1018,15 @@ class Api:
                                    "count": 0, "backup": ""}, ensure_ascii=False)
 
             local_ts = webdav_sync.read_meta(self.store.path.parent)
-            if remote_ts and remote_ts <= local_ts and self.store.path.exists():
+            # ★保护本地数据：本地有文件但没 meta（老版本升级 / meta 丢失）时，
+            #   绝不能让云端的空数据无声覆盖掉本地已有待办 —— 判本地新，反推上去。
+            #   只有用户明确点「从云端下载」(force) 才允许覆盖。
+            local_has_data = self.store.path.exists() and self.store.path.stat().st_size > 2
+            local_unknown = local_ts == 0 and local_has_data and not force_download
+            if not force_download and (
+                (remote_ts and remote_ts <= local_ts and self.store.path.exists())
+                or local_unknown
+            ):
                 # 本地更新：不覆盖，把本地推上去。这里不用 _do_push（会 Again 拿 net_lock 死锁）
                 try:
                     now = int(time.time() * 1000)

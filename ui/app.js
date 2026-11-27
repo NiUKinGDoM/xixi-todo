@@ -2230,7 +2230,8 @@
     if (syncBusy) return;
     syncBusy = true;
     el.syncStatus.textContent = '正在拉取…';
-    callApi('sync_pull').then(function (raw) {
+    // ★手动点「从云端下载」= 强制用云端覆盖本地，不做时间戳反推
+    callApi('sync_pull', '1').then(function (raw) {
       var r = {};
       try { r = JSON.parse(raw || '{}'); } catch (e) { r = {}; }
       syncBusy = false;
