@@ -98,7 +98,7 @@ def main():
 
     # 验证源码里真的接了 force
     app_src = (ROOT / "app.py").read_text(encoding="utf-8")
-    check("app.py force 参数生效", "not force_download and remote_ts" in app_src)
+    check("app.py force 参数生效", "if not force_download and (" in app_src)
     js = (ROOT / "ui/app.js").read_text(encoding="utf-8")
     check("前端下载传 force=1", "callApi('sync_pull', '1')" in js)
 

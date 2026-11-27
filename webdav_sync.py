@@ -173,12 +173,16 @@ def test(cfg: SyncConfig) -> tuple[bool, str]:
         return False, "请先填写地址和账号"
     if not cfg.password:
         return False, "还缺应用密码"
+    # 根路径用带斜杠的形式：坚果云对 /dav 会 301 到 /dav/，直接请求 /dav/ 就不会重定向。
+    # 这样测试连接不会假报 HTTP 301（push/pull 走的是具体文件路径，本来就不受影响）。
+    root_url = cfg.url.rstrip("/") + "/"
     try:
-        with _request(cfg, "PROPFIND", cfg.url, b"", {"Depth": "0"}) as r:
+        with _request(cfg, "PROPFIND", root_url, b"", {"Depth": "0"}) as r:
             return (True, "连接正常") if 200 <= r.status < 300 else (False, f"HTTP {r.status}")
     except urllib.error.HTTPError as e:
-        # WebDAV 服务端根路径返回 405 也算通（有的坚果云节点不支持 PROPFIND 根）
-        return (True, "连接正常") if e.code == 405 else (False, f"HTTP {e.code}")
+        # 405 = 节点不支持 PROPFIND 根；301/302 = 服务端重定向（凭据已通过校验）
+        # 都算「连得上」，不能报成同步失败。
+        return (True, "连接正常") if e.code in (405, 301, 302) else (False, f"HTTP {e.code}")
     except Exception as e:
         return False, str(e) or "网络错误"
 
